@@ -21,6 +21,62 @@
 
 <p align="center">Sugestões, filas e histórico local para administrar quem você segue no Instagram.</p>
 
+<p align="center">
+  <a href="#a-fila-em-ação">Demonstração</a> · <a href="#como-funciona">Fluxos</a> · <a href="#instalação-local">Instalação</a>
+</p>
+
+## A fila em ação
+
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/fila-em-acao.png">
+    <img src="assets/fila-em-acao.gif" width="800" alt="Gráfico animado de uma fila de exemplo com seis perfis. Quatro confirmados, um para conferir e um pulado.">
+  </picture>
+</p>
+
+[Ver gráfico estático](assets/fila-em-acao.png)
+
+## Como funciona
+
+### Seguir sugestões
+
+```mermaid
+flowchart TD
+    accTitle: Fluxo para seguir perfis sugeridos
+    accDescr: A extensão verifica a elegibilidade, respeita o intervalo e registra o resultado antes de avançar.
+    A["Ler sugestões das referências"] --> B{"Perfil elegível?"}
+    B -->|Sim| C["Aguardar e seguir"]
+    B -->|Não| D["Pular perfil"]
+    C --> E["Conferir e salvar o resultado"]
+    classDef choice fill:#2d2454,stroke:#a18ced,color:#f4f0ff
+    class B choice
+```
+
+<details>
+<summary>Parar de seguir todos</summary>
+
+```mermaid
+flowchart TD
+    accTitle: Fluxo para parar de seguir
+    accDescr: A extensão usa a lista Seguindo. Quando a lista demora, confere o estado no próprio perfil antes de continuar.
+    A["Abrir a lista Seguindo"] --> B["Remover perfil verificado"]
+    B --> C{"Lista confirmou a remoção?"}
+    C -->|Sim| D["Salvar remoção"]
+    C -->|Demorou| E{"Ainda mostra Seguindo no perfil?"}
+    E -->|Não| D
+    E -->|Sim| F["Deixar para conferência"]
+    D --> G["Avançar na fila"]
+    F --> G
+    classDef choice fill:#2d2454,stroke:#a18ced,color:#f4f0ff
+    classDef pending fill:#382a1e,stroke:#d6a871,color:#ffe8c9
+    class C,E choice
+    class F pending
+```
+
+</details>
+
+Um aviso de restrição do Instagram ou um resultado que a extensão não consegue conferir pausa a fila e preserva o progresso.
+
 ## O que faz
 
 - Segue perfis a partir das sugestões de três referências configuráveis, com alternativa pelos seguidores das referências.
@@ -42,7 +98,7 @@ Ao atualizar, recarregue a mesma instalação para conservar seus dados locais.
 
 ## Fluxo e dados
 
-O modo automático usa o intervalo e as pausas configurados. Cada tentativa enviada conta na cota local. O total de ações bem-sucedidas inclui apenas resultados confirmados. Uma restrição ou verificação do Instagram pausa o fluxo.
+O modo automático usa o intervalo e as pausas configurados. Cada tentativa enviada conta na cota local. O total de ações bem-sucedidas inclui apenas resultados confirmados.
 
 No unfollow, uma confirmação atrasada é conferida no próprio perfil. Se ele ainda aparecer como seguido, a fila registra a pendência e continua pelos demais. Uma nova execução pode conferir os pendentes novamente. A conclusão exige uma contagem nativa de zero e o salvamento do resultado.
 
