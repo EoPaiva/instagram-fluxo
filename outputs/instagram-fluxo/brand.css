@@ -1,0 +1,93 @@
+/* Visual identity adapted from the owner's upaiva.dev planet and mPaiva_ signature. */
+.brand-animated { display: inline-flex; align-items: flex-end; }
+.brand-animated .brand-caret {
+  flex: none;
+  display: inline-block;
+  width: .5em;
+  height: 2.5px;
+  overflow: hidden;
+  color: transparent;
+  background: var(--ink);
+  margin: 0 0 .14em .1em;
+}
+.intro.brand-intro {
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 20px 42px;
+  margin-bottom: 22px;
+}
+.brand-orbit { position: relative; min-width: 0; height: 344px; }
+.brand-orbit canvas { display: block; width: 100%; height: calc(100% - 38px); }
+.motion-toggle { position: absolute; right: 0; bottom: 0; min-height: 44px; padding: 8px 10px; background: transparent; color: var(--muted); font-size: .74rem; }
+.motion-toggle:hover:enabled { color: var(--ink); background: #181818; }
+.motion-toggle:disabled { opacity: 1; }
+.intro.brand-intro + .flow-guide { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0 0 32px; padding: 20px 0 0; border-top: 1px solid var(--line); }
+.intro.brand-intro + .flow-guide li { min-width: 0; }
+.brand-signature { position: relative; isolation: isolate; width: min(calc(100% - var(--gutter) * 2), 1168px); margin: 12px auto 32px; padding: 20px 0; border-top: 1px solid var(--line); text-align: center; overflow: hidden; font: 300 clamp(4rem, 13vw, 11.5rem)/1.15 var(--display); letter-spacing: -.04em; color: var(--ink); }
+.brand-signature-text { display: block; white-space: nowrap; }
+.brand-signature canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.brand-signature[data-brand-ready="true"] .brand-signature-text { opacity: 0; }
+.review-identity { display: grid; grid-template-columns: minmax(0, 1fr) 230px; align-items: center; gap: 24px; }
+.review-planet { min-width: 0; height: 210px; }
+.review-planet canvas { display: block; width: 100%; height: 100%; }
+.brand-footer { margin-top: 16px; border-top: 1px solid var(--line); background: var(--card); }
+.brand-footer .brand-signature { margin-top: 0; margin-bottom: 16px; padding-block: 38px 20px; border-top: 0; }
+.brand-footer-content { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.4fr); align-items: center; gap: 24px 48px; width: min(100%, 1280px); margin-inline: auto; padding: 0 var(--gutter) 40px; }
+.brand-footer-credit { color: var(--muted); font-size: .85rem; }
+.brand-footer-credit strong { display: block; margin-top: 5px; color: var(--ink); font: 300 clamp(1.6rem, 2.4vw, 2.2rem)/1.2 var(--display); letter-spacing: -.025em; }
+.brand-footer-credit > span { display: block; margin-top: 12px; font-size: .8rem; }
+.brand-footer-link { position: relative; display: flex; align-items: center; justify-content: space-between; min-width: 0; min-height: 44px; gap: 18px; padding-block: 14px 20px; color: var(--ink); font: 300 clamp(2.5rem, 6.5vw, 5.5rem)/1.08 var(--display); letter-spacing: -.04em; text-decoration: none; }
+.brand-footer-link > span { min-width: 0; white-space: nowrap; }
+.brand-footer-link > svg { width: clamp(32px, 4.2vw, 62px); height: auto; stroke-width: 1.1; }
+.brand-footer-link::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: var(--line-strong); }
+.brand-footer-link:hover { color: var(--soft); }
+.brand-footer-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 8px; }
+.brand-footer .brand-footer-bottom { align-items: center; min-height: 74px; padding-block: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; }
+.brand-footer-bottom > span:first-child { color: var(--soft); }
+.brand-footer--compact .brand-footer-content { padding-top: 38px; }
+.pacing-settings { grid-column: 1 / -1; padding-block: 18px; border-top: 1px solid var(--line); }
+.pacing-settings > summary { min-height: 44px; font-size: .88rem; }
+.pacing-settings > p { margin-top: 10px; }
+.pacing-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.pacing-fields > div { min-width: 0; }
+.pacing-fields label { min-height: 2.8em; margin-bottom: 8px; }
+.pacing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px; margin-top: 18px; }
+.pacing-block { grid-column: 1 / -1; padding-block: 18px; border-block: 1px solid var(--line); }
+.pacing-block p { color: var(--danger); }
+.pacing-block > button { margin-top: 14px; }
+@media (prefers-reduced-motion: no-preference) {
+  .brand-animated .brand-caret { animation: paiva-caret 1.05s steps(1, end) infinite; }
+  @keyframes paiva-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .brand-footer-link > svg { transition: transform 220ms var(--ease); }
+  .brand-footer-link::after { transform: scaleX(.3); transform-origin: left; transition: transform 280ms var(--ease), background 180ms; }
+  .brand-footer-link:is(:hover, :focus-visible) > svg { transform: translate(4px, -4px); }
+  .brand-footer-link:is(:hover, :focus-visible)::after { transform: scaleX(1); background: var(--soft); }
+}
+html[data-brand-paused="true"] .brand-animated .brand-caret { animation: none; opacity: 1; }
+@media (max-width: 1040px) {
+  .intro.brand-intro { gap: 20px; }
+  .brand-orbit { height: 300px; }
+  .pacing-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 740px) {
+  .intro.brand-intro { grid-template-columns: 1fr; gap: 4px; margin-bottom: 12px; }
+  .brand-orbit { width: min(100%, 420px); height: 276px; margin-inline: auto; }
+  .intro.brand-intro + .flow-guide { gap: 16px; padding-top: 18px; margin-bottom: 24px; }
+  .motion-toggle { right: 8px; }
+  .review-identity { grid-template-columns: minmax(0, 1fr) 148px; gap: 12px; }
+  .review-identity h1 { font-size: clamp(2rem, 6.5vw, 3.5rem); }
+  .review-planet { height: 160px; }
+  .brand-signature { margin-bottom: 24px; padding-block: 24px; }
+  .brand-footer .brand-signature { padding-top: 30px; margin-bottom: 8px; }
+  .brand-footer-content { grid-template-columns: 1fr; gap: 18px; padding-bottom: 30px; }
+  .brand-footer-credit > span { margin-top: 8px; }
+  .brand-footer-link { font-size: clamp(2.5rem, 10vw, 4rem); gap: 12px; }
+  .brand-footer .brand-footer-bottom { gap: 8px 20px; flex-wrap: wrap; }
+  .brand-footer--compact .brand-footer-content { padding-top: 30px; }
+  .pacing-fields { gap: 16px 12px; }
+}
+@media (max-width: 360px) {
+  .brand-orbit { height: 244px; }
+  .review-identity { grid-template-columns: minmax(0, 1fr) 112px; gap: 8px; }
+  .review-planet { height: 128px; }
+}

@@ -1,0 +1,11 @@
+logs/
+work/
+__pycache__/
+*.py[cod]
+*.jsonl
+.env
+.env.*
+.DS_Store
+Thumbs.db
+.impeccable/
+installed/

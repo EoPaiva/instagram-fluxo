@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "fetched_at_utc": "2026-11-13T11:22:24.3546167Z",
+  "source_site": "https://upaiva.dev/",
+  "description": "Original uPaiva planet and particle brand assets copied from the owner site; all artwork preserved",
+  "verification": "Downloaded source responses were independently fetched again and SHA-256 compared with local files; PNG dimensions read from IHDR; ICO directory and embedded PNG dimensions cross-checked; SVG declared dimensions and viewBox read from source",
+  "original_assets": [
+    {
+      "url": "https://upaiva.dev/favicon.ico?v=2",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-favicon.ico",
+      "width": 48,
+      "height": 48,
+      "format": "ico",
+      "bytes": 5234,
+      "source_sha256": "8612c899abbcae8dfdb4adc3bc738666b7b97c8d2594a35cf45a26d9b5e63372",
+      "local_sha256": "8612c899abbcae8dfdb4adc3bc738666b7b97c8d2594a35cf45a26d9b5e63372",
+      "transformation": "None; original response bytes",
+      "dimensions_note": "Width and height denote largest frame; all embedded frame dimensions are listed below",
+      "frames": [
+        {
+          "index": 0,
+          "width": 16,
+          "height": 16,
+          "format": "png",
+          "byte_offset": 54,
+          "bytes": 570,
+          "sha256": "00323612627a6dce77ffe092d544fb45d724a084d8e1f35d376e23aefcded5ee"
+        },
+        {
+          "index": 1,
+          "width": 32,
+          "height": 32,
+          "format": "png",
+          "byte_offset": 624,
+          "bytes": 1640,
+          "sha256": "aa87ba6a45b598d8b88afd53b5428b51a5e09ba28ee084dd760251ae80e7e469"
+        },
+        {
+          "index": 2,
+          "width": 48,
+          "height": 48,
+          "format": "png",
+          "byte_offset": 2264,
+          "bytes": 2970,
+          "sha256": "246c474ec9bf77a42320d10b964c64adad96682fde1bcb1d5371dc6aae328778"
+        }
+      ]
+    },
+    {
+      "url": "https://upaiva.dev/favicon.svg?v=2",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-favicon.svg",
+      "width": 512,
+      "height": 512,
+      "format": "svg",
+      "bytes": 8724,
+      "source_sha256": "462c2e31281b2e571befb4d74c0e62f48529b816f7a0f697985aec2e9261f14c",
+      "local_sha256": "462c2e31281b2e571befb4d74c0e62f48529b816f7a0f697985aec2e9261f14c",
+      "transformation": "None; original response bytes",
+      "view_box": "0 0 512 512"
+    },
+    {
+      "url": "https://upaiva.dev/favicon-48.png?v=2",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-48.png",
+      "width": 48,
+      "height": 48,
+      "format": "png",
+      "bytes": 2451,
+      "source_sha256": "8e5d4e5b8e3f9e6b840aa8bb5f29e1c34408e410c25af8f0a8007c0efb6eb6c7",
+      "local_sha256": "8e5d4e5b8e3f9e6b840aa8bb5f29e1c34408e410c25af8f0a8007c0efb6eb6c7",
+      "transformation": "None; original response bytes"
+    },
+    {
+      "url": "https://upaiva.dev/apple-touch-icon.png?v=2",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-180.png",
+      "width": 180,
+      "height": 180,
+      "format": "png",
+      "bytes": 13112,
+      "source_sha256": "d8ea2c63d326d4813d72ba1fdf84c023c17266a1b14c17deb982657d79004e3f",
+      "local_sha256": "d8ea2c63d326d4813d72ba1fdf84c023c17266a1b14c17deb982657d79004e3f",
+      "transformation": "None; original response bytes"
+    },
+    {
+      "url": "https://upaiva.dev/icon-192.png",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-192.png",
+      "width": 192,
+      "height": 192,
+      "format": "png",
+      "bytes": 15810,
+      "source_sha256": "59bfa75be1a8adaa6eb851088c18371ac7ed15873cd01fedb536c4a57931e42e",
+      "local_sha256": "59bfa75be1a8adaa6eb851088c18371ac7ed15873cd01fedb536c4a57931e42e",
+      "transformation": "None; original response bytes"
+    },
+    {
+      "url": "https://upaiva.dev/icon-512.png",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-512.png",
+      "width": 512,
+      "height": 512,
+      "format": "png",
+      "bytes": 62559,
+      "source_sha256": "29b2a7a5fbb9fd93eb8e19d9f2e02de9d3d3ae4918d9f5ab8a774ee6f42b8b9f",
+      "local_sha256": "29b2a7a5fbb9fd93eb8e19d9f2e02de9d3d3ae4918d9f5ab8a774ee6f42b8b9f",
+      "transformation": "None; original response bytes"
+    }
+  ],
+  "extracted_assets": [
+    {
+      "url": "https://upaiva.dev/favicon.ico?v=2",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-16.png",
+      "width": 16,
+      "height": 16,
+      "format": "png",
+      "bytes": 570,
+      "source_sha256": "00323612627a6dce77ffe092d544fb45d724a084d8e1f35d376e23aefcded5ee",
+      "local_sha256": "00323612627a6dce77ffe092d544fb45d724a084d8e1f35d376e23aefcded5ee",
+      "transformation": "Exact embedded PNG frame extraction; no decode, resizing, recompression, or artwork changes",
+      "source_frame_index": 0,
+      "source_byte_offset": 54
+    },
+    {
+      "url": "https://upaiva.dev/favicon.ico?v=2",
+      "local_path": "outputs/instagram-fluxo/icons/upaiva-32.png",
+      "width": 32,
+      "height": 32,
+      "format": "png",
+      "bytes": 1640,
+      "source_sha256": "aa87ba6a45b598d8b88afd53b5428b51a5e09ba28ee084dd760251ae80e7e469",
+      "local_sha256": "aa87ba6a45b598d8b88afd53b5428b51a5e09ba28ee084dd760251ae80e7e469",
+      "transformation": "Exact embedded PNG frame extraction; no decode, resizing, recompression, or artwork changes",
+      "source_frame_index": 1,
+      "source_byte_offset": 624
+    }
+  ],
+  "available_exact_png_sizes": [
+    16,
+    32,
+    48,
+    180,
+    192,
+    512
+  ],
+  "original_ico_sizes": [
+    16,
+    32,
+    48
+  ],
+  "recommended_extension_icon_sizes": [
+    16,
+    32,
+    48,
+    192,
+    512
+  ],
+  "note": "No 128px original or ICO frame was supplied; no synthetic 128px image generated. Existing reminder.png preserved."
+}

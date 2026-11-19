@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR" data-type="software">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Siga perfis das suas referências e inicie o unfollow de todos por botão, com fila e histórico salvos neste navegador.">
+  <meta name="page-type" content="software">
+  <meta name="site-kind" content="software">
+  <meta name="theme-color" content="#080808">
+  <title>Fluxo Instagram · mPaiva</title>
+  <link rel="icon" href="icons/upaiva-favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="icons/upaiva-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/upaiva-180.png">
+  <link rel="preload" href="assets/fonts/inter-display-light.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/inter-regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="brand.css">
+  <link rel="stylesheet" href="queue-view.css">
+  <script src="brand-motion.js" defer></script>
+  <script src="discovery.js" defer></script>
+  <script src="instagram.js" defer></script>
+  <script src="unfollow-all.js" defer></script>
+  <script src="profile-photo-client.js" defer></script>
+  <script src="queue-view.js" defer></script>
+  <script src="diagnostic-schema.js" defer></script>
+  <script src="diagnostic-client.js" defer></script>
+  <script src="dashboard.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Ir para o conteúdo</a>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand brand-animated" data-brand-wordmark href="https://upaiva.dev/" target="_blank" rel="noopener noreferrer" aria-label="mPaiva_, abrir upaiva.dev em nova aba">mPaiva<span class="brand-caret" aria-hidden="true">_</span></a>
+    <span class="product-name">Fluxo Instagram</span>
+    <a class="secondary" href="#unfollow-workspace">Parar de seguir todos <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 10h10m-4-4 4 4-4 4"/></svg></a>
+  </div></header>
+  <main id="main">
+    <header class="intro brand-intro" data-enter>
+      <div class="intro-copy"><h1>Seu Instagram,<br><span>em um só fluxo.</span></h1><p>Siga pessoas das suas referências e acompanhe a fila. Quando decidir, inicie a remoção de todos pela lista Seguindo.</p></div>
+      <div class="brand-orbit">
+        <canvas data-brand-planet aria-hidden="true"></canvas>
+        <button type="button" class="motion-toggle" data-brand-toggle aria-pressed="false">Pausar animações</button>
+      </div>
+    </header>
+      <ol class="flow-guide" aria-label="Etapas do fluxo">
+        <li><span class="step-index" aria-hidden="true">01</span><span>Configure as referências<small>Três perfis ligados ao seu nicho.</small></span></li>
+        <li><span class="step-index" aria-hidden="true">02</span><span>Siga as sugestões<small>Escolha a quantidade e acompanhe.</small></span></li>
+        <li><span class="step-index" aria-hidden="true">03</span><span>Pare de seguir quando quiser<small>Você inicia e acompanha a remoção.</small></span></li>
+      </ol>
+    <nav class="section-nav" aria-label="Seções do painel"><a href="#profile-workspace">Seguir perfis</a><a href="#follow-queue">Fila</a><a href="#unfollow-workspace">Parar de seguir todos</a><a href="#local-data">Dados locais</a><a href="#settings">Configurações de IA</a><span class="local-indicator"><span aria-hidden="true"></span>Armazenamento local</span></nav>
+    <div class="workspace"><div class="main-column">
+      <section class="card profile-workspace" id="profile-workspace" aria-labelledby="profile-heading">
+        <div class="card-head"><div><h2 id="profile-heading">Conta e referências</h2><p class="muted" id="profile-prompt">Abra o painel pelo ícone da extensão enquanto estiver no seu perfil do Instagram.</p></div><div class="profile-actions"><button type="button" class="primary" id="load-profile">Carregar meu perfil</button><button type="button" class="secondary" id="analyze" title="Usa um provedor de IA configurado">Analisar com IA</button></div></div>
+        <div id="profile-result" class="profile-result" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg><div><p id="profile-name" class="profile-name"></p><p id="niche"></p></div></div>
+        <div id="search-block" class="search-block" hidden>
+          <h3>De onde vêm as sugestões?</h3><p class="small muted" id="reference-help">Informe três perfis diferentes do seu nicho. A extensão abre a lista Seguidores de cada um e usa as pessoas exibidas em Sugestões para você.</p>
+          <div class="reference-fields">
+            <div><label for="reference-1">Primeira referência</label><input id="reference-1" class="reference-input" type="text" maxlength="160" placeholder="@perfil" spellcheck="false" autocomplete="off" aria-describedby="reference-help"></div>
+            <div><label for="reference-2">Segunda referência</label><input id="reference-2" class="reference-input" type="text" maxlength="160" placeholder="@perfil" spellcheck="false" autocomplete="off" aria-describedby="reference-help"></div>
+            <div><label for="reference-3">Terceira referência</label><input id="reference-3" class="reference-input" type="text" maxlength="160" placeholder="@perfil" spellcheck="false" autocomplete="off" aria-describedby="reference-help"></div>
+          </div>
+          <div class="reference-actions"><button type="button" class="secondary" id="save-references">Salvar referências</button><p id="reference-status" role="status" class="small muted" aria-atomic="true"></p></div>
+          <form class="automatic-follow" id="automatic-follow-form" aria-labelledby="automatic-follow-heading">
+            <div class="automatic-follow-copy"><h3 id="automatic-follow-heading">Seguir automaticamente</h3><p class="small muted" id="automatic-follow-help">Segue pela origem selecionada com o botão Seguir. Pula perfis com o botão Seguir de volta.</p></div>
+            <div class="automatic-follow-controls"><div><label for="automatic-follow-amount">Quantidade de pessoas</label><input type="number" id="automatic-follow-amount" min="1" max="200" step="1" value="15" required aria-describedby="automatic-follow-help automatic-follow-quota"></div><button type="submit" class="primary" id="start-automatic-follow">Começar a seguir <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 10h10m-4-4 4 4-4 4"/></svg></button><button type="button" class="secondary" id="resume-follow" hidden>Retomar fila salva</button></div>
+            <div class="automatic-follow-source"><label for="automatic-follow-source">Origem dos perfis</label><select id="automatic-follow-source" aria-describedby="automatic-follow-source-help"><option value="suggestions">Somente sugestões</option><option value="fallback" selected>Sugestões + seguidores da referência</option></select><p class="small muted" id="automatic-follow-source-help">Por padrão, se não aparecer Sugestões para você, usa os seguidores da referência com o botão Seguir. Pula Seguir de volta e quem já foi seguido pelo fluxo. Escolha Somente sugestões para desativar essa alternativa.</p></div>
+            <p id="automatic-follow-quota" role="status" class="small muted" aria-atomic="true"></p>
+            <details class="pacing-settings">
+              <summary>Ritmo das ações</summary>
+              <p class="small muted" id="pacing-help">Use intervalos variáveis e pausas entre lotes. Esses valores são ajustes locais e não garantem ausência de bloqueios do Instagram.</p>
+              <div class="pacing-fields">
+                <div><label for="pacing-min-delay">Intervalo mínimo (segundos)</label><input type="number" id="pacing-min-delay" min="15" max="3600" step="1" value="45" aria-describedby="pacing-help"></div>
+                <div><label for="pacing-max-delay">Intervalo máximo (segundos)</label><input type="number" id="pacing-max-delay" min="15" max="3600" step="1" value="90" aria-describedby="pacing-help"></div>
+                <div><label for="pacing-batch-size">Ações por lote</label><input type="number" id="pacing-batch-size" min="1" max="50" step="1" value="10" aria-describedby="pacing-help"></div>
+                <div><label for="pacing-batch-pause">Pausa entre lotes (minutos)</label><input type="number" id="pacing-batch-pause" min="1" max="240" step="1" value="10" aria-describedby="pacing-help"></div>
+              </div>
+              <div class="pacing-actions"><button type="button" class="secondary" id="save-pacing">Salvar ritmo</button><button type="button" class="text-button" id="report-platform-block">Pausar por bloqueio</button></div>
+              <p id="pacing-status" class="small muted" role="status" aria-atomic="true"></p>
+            </details>
+            <div class="pacing-block" id="pacing-block" hidden>
+              <p id="pacing-block-message" class="small" role="status" aria-atomic="true">As ações estão pausadas após um bloqueio do Instagram. Confira se a função já está disponível antes de retomar.</p>
+              <button type="button" class="secondary" id="resume-after-block">Retomar após desbloqueio</button>
+            </div>
+            <div class="ai-mode-setting"><label class="ai-toggle" for="ai-mode"><input type="checkbox" id="ai-mode" aria-describedby="ai-mode-status ai-mode-help"><span>Usar agente de IA</span></label><div><p id="ai-mode-status" class="small" role="status">Desligado · segue as sugestões diretamente.</p><p id="ai-mode-help" class="small muted">Quando ativado, os dados públicos do perfil e as sugestões visíveis são enviados ao provedor configurado.</p></div></div>
+          </form>
+          <div class="manual-discovery"><p class="small muted">Prefere escolher os perfis antes?</p><button type="button" class="text-button" id="discover">Ver sugestões <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 10h10m-4-4 4 4-4 4"/></svg></button></div>
+        </div>
+      </section>
+      <div class="progress-bar" id="progress-bar" hidden><div class="progress-content"><p id="flow-status" role="status" aria-atomic="true"></p><progress id="flow-progress-meter" max="1" aria-label="Progresso da etapa atual" aria-describedby="flow-status" hidden></progress></div><button type="button" class="secondary stop" id="stop" hidden>Parar fluxo</button></div>
+      <section class="queue-panel" id="follow-queue" aria-labelledby="queue-heading" aria-roledescription="carrossel" data-state="idle" data-following-current="true">
+        <div class="queue-heading"><div><h2 id="queue-heading">Sua fila, perfil por perfil.</h2><p class="queue-owner" id="queue-owner">Nenhuma conta carregada</p></div><p class="queue-state" id="queue-state">Pronta para começar</p></div>
+        <div class="queue-meter" id="queue-meter" hidden><div class="queue-meter-copy"><p id="queue-progress-label">0 ações confirmadas</p><p id="queue-results">0 seguidos · 0 solicitações</p></div><progress id="queue-progress" max="1" value="0" aria-labelledby="queue-progress-label"></progress></div>
+        <div class="queue-empty" id="queue-empty"><svg aria-hidden="true" viewBox="0 0 48 48"><path d="M5 13h18M5 24h27M5 35h18m9-22 11 11-11 11"/></svg><div><h3 id="queue-empty-title">Sua próxima sequência começa aqui</h3><p>O perfil atual fica em destaque, entre os anteriores e os próximos da fila.</p></div></div>
+        <div class="queue-stage" id="queue-stage" tabindex="0" role="group" aria-label="Perfis da fila. Use as setas para consultar, Home para o primeiro e End para o último." hidden></div>
+        <div class="queue-neighbors" id="queue-neighbors" aria-hidden="true" hidden><p>Anterior<span id="queue-previous-name">Início da fila</span></p><p>A seguir<span id="queue-next-name">Fim da fila</span></p></div>
+        <div class="queue-controls"><div class="queue-navigation"><button class="secondary queue-arrow" type="button" id="queue-previous" aria-label="Consultar perfil anterior" aria-controls="queue-stage" disabled><svg aria-hidden="true" viewBox="0 0 20 20"><path d="m12 5-5 5 5 5"/></svg></button><p class="queue-position" id="queue-position">Nenhum perfil na fila</p><button class="secondary queue-arrow" type="button" id="queue-next" aria-label="Consultar próximo perfil" aria-controls="queue-stage" disabled><svg aria-hidden="true" viewBox="0 0 20 20"><path d="m8 5 5 5-5 5"/></svg></button></div><button class="queue-current" type="button" id="queue-current" aria-controls="queue-stage" disabled>Acompanhando a fila</button></div>
+        <div class="queue-photo-setting"><p id="queue-photo-help">Veja as fotos do Instagram e salve miniaturas neste Chrome.</p><button class="secondary" type="button" id="queue-enable-photos" aria-describedby="queue-photo-help">Ativar fotos</button><p id="queue-photo-status" role="status" aria-atomic="true"></p></div>
+        <div class="queue-notice"><p class="queue-message" id="queue-message">Carregue seu perfil, configure as referências e inicie uma fila.</p><p class="queue-countdown" id="queue-countdown" aria-hidden="true" hidden></p></div>
+        <p class="queue-sr-only" id="queue-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+      </section>
+      <details class="discovery-log" id="discovery-log" hidden><summary>Registro de execução</summary><textarea id="discovery-log-text" aria-label="Log da busca e do lote" readonly rows="6"></textarea><div class="discovery-log-actions"><button type="button" class="secondary" id="copy-discovery-log">Copiar log</button><p id="discovery-log-status" role="status" class="small muted"></p></div></details>
+      <section class="card recommendation-section" id="recommendation-section" aria-labelledby="recommendation-heading" hidden>
+        <details class="recommendation-disclosure">
+          <summary><h2 id="recommendation-heading">Sugestões para seguir <span id="selection-count" class="muted"></span></h2></summary>
+          <div class="recommendation-actions"><button type="button" class="primary" id="follow">Seguir selecionados</button></div>
+          <ul id="recommendations" class="list"></ul>
+        </details>
+      </section>
+      <section class="card review-workspace" id="review-workspace" aria-labelledby="history-heading">
+        <details class="history-disclosure">
+          <summary><h2 id="history-heading">Histórico de ações</h2></summary>
+          <div class="card-head"><p class="muted">A memória de quem já foi seguido permanece salva, inclusive após a remoção.</p><button type="button" class="secondary" id="refresh-history">Atualizar histórico</button></div>
+          <p id="history-status" role="status" class="muted history-status"></p>
+          <ul id="history" class="list"></ul>
+        </details>
+      </section>
+      <section class="unfollow-section" id="unfollow-workspace" aria-labelledby="unfollow-all-heading"><div><h2 id="unfollow-all-heading">Parar de seguir todos</h2><p class="muted">Abre Seguindo e remove uma conta por vez, como no Unfollow assistido. A fila carrega as linhas conforme avança. Se a lista não mostrar suas relações, confere os perfis conhecidos no histórico. Você pode parar a execução.</p></div><button type="button" class="secondary stop" id="unfollow-all" disabled>Iniciar unfollow de todos</button></section>
+      <section class="card local-data" id="local-data" aria-labelledby="local-heading">
+        <div class="card-head"><div><h2 id="local-heading">Sua base local</h2><p class="muted">Sugestões, filas e histórico ficam neste navegador, separados por conta.</p></div><span class="storage-label">Neste Chrome</span></div>
+        <p id="local-summary" class="local-summary" role="status">Carregue seu perfil para consultar os dados desta conta.</p><p id="local-updated" class="small muted"></p><p id="local-data-status" class="small muted" role="status"></p>
+        <div class="local-actions"><button type="button" class="secondary" id="refresh-local-data" disabled>Atualizar resumo</button><button type="button" class="secondary" id="export-data" disabled>Exportar dados locais</button></div>
+        <p id="diagnostic-status" class="small muted" role="status">Conferindo o gravador de logs locais…</p>
+        <p id="diagnostic-detail" class="small muted"></p>
+        <button type="button" class="text-button" id="diagnostic-retry">Verificar gravação dos logs</button>
+      </section>
+      <details class="card config" id="settings">
+        <summary id="config-heading">Chaves de IA <span class="muted">Opcional para o modo automático</span></summary>
+        <div class="settings-grid"><div>
+          <form id="vault-form" autocomplete="off" hidden><p id="vault-hint" class="small muted"></p><label for="vault-password">Senha do cofre</label><input id="vault-password" type="password" maxlength="256" autocomplete="off" aria-describedby="vault-hint" required><label id="vault-confirm-label" for="vault-confirm" hidden>Confirme a senha do cofre</label><input id="vault-confirm" type="password" maxlength="256" autocomplete="off" hidden><button id="vault-submit" type="submit" class="secondary">Criar cofre local</button></form>
+          <form id="config-form" autocomplete="off" hidden><label for="provider">Provedor</label><select id="provider" name="provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="claude">Claude</option></select><label for="model">Modelo <span class="muted">(opcional)</span></label><input id="model" name="model" maxlength="128" placeholder="Padrão do provedor" spellcheck="false"><label for="key">Chave de API</label><input id="key" name="key" type="password" maxlength="1024" autocomplete="off" spellcheck="false" placeholder="Cole sua chave"><button type="submit" class="secondary">Salvar configuração</button></form>
+          <button id="lock-vault" type="button" class="secondary" hidden>Bloquear cofre</button><p id="config-status" role="status" class="config-status muted" aria-atomic="true"></p>
+        </div><div class="settings-description"><h3>Análise com sua chave</h3><p class="small muted">As chaves ficam criptografadas neste Chrome. A análise envia o texto público e os @nomes ao provedor usado.</p><div id="provider-summary" class="providers" hidden><h3>Ordem de uso</h3><ol id="provider-order" class="small"></ol></div></div></div>
+      </details>
+    </div></div>
+  </main>
+  <footer class="brand-footer">
+    <div class="brand-signature" data-brand-signature role="img" aria-label="mPaiva_">
+      <span class="brand-signature-text" aria-hidden="true">mPaiva_</span>
+      <canvas data-brand-name data-text="mPaiva_" aria-hidden="true"></canvas>
+    </div>
+    <div class="brand-footer-content">
+      <p class="brand-footer-credit">Criado por<strong>Mateus Paiva.</strong><span>Conheça meus projetos e meu trabalho.</span></p>
+      <a class="brand-footer-link" href="https://upaiva.dev/" target="_blank" rel="noopener noreferrer" aria-label="Conheça o site de Mateus Paiva: upaiva.dev (abre em nova aba)"><span>upaiva.dev</span><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 25 25 7M7 7h18v18"/></svg></a>
+    </div>
+    <div class="footer brand-footer-bottom"><span>mPaiva_ <span class="muted">/ Fluxo Instagram</span></span><span>Full Stack · IA aplicada · Automação</span></div>
+  </footer>
+</body>
+</html>

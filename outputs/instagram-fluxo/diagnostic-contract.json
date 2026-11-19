@@ -1,0 +1,389 @@
+{
+  "schemaVersion": 1,
+  "eventNames": [
+    "diagnostics.initialized",
+    "diagnostics.gap",
+    "diagnostics.retention-pruned",
+    "ui.click",
+    "ui.change",
+    "workflow.start",
+    "workflow.end",
+    "workflow.detail",
+    "workflow.error",
+    "workflow.stop",
+    "queue.state",
+    "action.reserved",
+    "action.recorded",
+    "action.authorized",
+    "action.rejected",
+    "pacing.blocked",
+    "pacing.cleared",
+    "pacing.configured",
+    "profile.loaded",
+    "reference.saved",
+    "data.snapshot",
+    "data.export",
+    "settings.changed",
+    "vault.opened",
+    "vault.locked",
+    "ai.started",
+    "ai.completed",
+    "ai.fallback",
+    "rpc.failed",
+    "runtime.error",
+    "runtime.rejection",
+    "extension.started",
+    "extension.updated",
+    "permission.changed",
+    "native-list.pending"
+  ],
+  "commonFields": [
+    "schemaVersion",
+    "id",
+    "timestamp",
+    "source",
+    "level",
+    "event",
+    "owner",
+    "runId"
+  ],
+  "eventFields": {
+    "ui.click": [
+      "control",
+      "enabled"
+    ],
+    "ui.change": [
+      "control",
+      "enabled"
+    ],
+    "workflow.start": [
+      "action",
+      "phase",
+      "status",
+      "reason",
+      "control",
+      "username",
+      "count",
+      "target",
+      "processed",
+      "followed",
+      "requested",
+      "skipped",
+      "observed",
+      "expected",
+      "queueLength",
+      "attempt",
+      "elapsedMs",
+      "waitMs",
+      "nextAt",
+      "clickBy",
+      "interrupted"
+    ],
+    "workflow.end": [
+      "action",
+      "phase",
+      "status",
+      "reason",
+      "control",
+      "username",
+      "count",
+      "target",
+      "processed",
+      "followed",
+      "requested",
+      "skipped",
+      "observed",
+      "expected",
+      "queueLength",
+      "attempt",
+      "elapsedMs",
+      "waitMs",
+      "nextAt",
+      "clickBy",
+      "interrupted"
+    ],
+    "workflow.error": [
+      "action",
+      "phase",
+      "status",
+      "reason",
+      "control",
+      "username",
+      "count",
+      "target",
+      "processed",
+      "followed",
+      "requested",
+      "skipped",
+      "observed",
+      "expected",
+      "queueLength",
+      "attempt",
+      "elapsedMs",
+      "waitMs",
+      "nextAt",
+      "clickBy",
+      "interrupted"
+    ],
+    "workflow.stop": [
+      "action",
+      "phase",
+      "status",
+      "reason",
+      "control",
+      "username",
+      "count",
+      "target",
+      "processed",
+      "followed",
+      "requested",
+      "skipped",
+      "observed",
+      "expected",
+      "queueLength",
+      "attempt",
+      "elapsedMs",
+      "waitMs",
+      "nextAt",
+      "clickBy",
+      "interrupted"
+    ],
+    "workflow.detail": [
+      "action",
+      "phase",
+      "status",
+      "reason",
+      "control",
+      "username",
+      "message",
+      "count",
+      "target",
+      "processed",
+      "followed",
+      "requested",
+      "skipped",
+      "observed",
+      "expected",
+      "queueLength",
+      "attempt",
+      "elapsedMs",
+      "waitMs",
+      "nextAt",
+      "clickBy"
+    ],
+    "queue.state": [
+      "action",
+      "phase",
+      "status",
+      "reason",
+      "username",
+      "count",
+      "target",
+      "processed",
+      "followed",
+      "requested",
+      "skipped",
+      "observed",
+      "expected",
+      "queueLength",
+      "attempt",
+      "elapsedMs",
+      "waitMs",
+      "nextAt",
+      "clickBy",
+      "interrupted"
+    ],
+    "action.reserved": [
+      "action",
+      "username",
+      "status",
+      "reason",
+      "nextAt",
+      "clickBy",
+      "count"
+    ],
+    "action.recorded": [
+      "action",
+      "username",
+      "status",
+      "reason",
+      "nextAt",
+      "clickBy",
+      "count"
+    ],
+    "action.authorized": [
+      "action",
+      "username",
+      "status",
+      "reason",
+      "nextAt",
+      "clickBy",
+      "count"
+    ],
+    "action.rejected": [
+      "action",
+      "username",
+      "status",
+      "reason",
+      "nextAt",
+      "clickBy",
+      "count"
+    ],
+    "pacing.blocked": [
+      "reason",
+      "action",
+      "nextAt",
+      "waitMs",
+      "count",
+      "enabled"
+    ],
+    "pacing.cleared": [
+      "reason",
+      "action",
+      "nextAt",
+      "waitMs",
+      "count",
+      "enabled"
+    ],
+    "pacing.configured": [
+      "reason",
+      "action",
+      "nextAt",
+      "waitMs",
+      "count",
+      "enabled"
+    ],
+    "profile.loaded": [
+      "count"
+    ],
+    "reference.saved": [
+      "count"
+    ],
+    "data.snapshot": [
+      "action",
+      "phase",
+      "status",
+      "count",
+      "expected",
+      "observed",
+      "complete"
+    ],
+    "data.export": [
+      "action",
+      "phase",
+      "status",
+      "count",
+      "expected",
+      "observed",
+      "complete"
+    ],
+    "settings.changed": [
+      "provider",
+      "status",
+      "reason",
+      "enabled"
+    ],
+    "vault.opened": [
+      "provider",
+      "status",
+      "reason",
+      "enabled"
+    ],
+    "vault.locked": [
+      "provider",
+      "status",
+      "reason",
+      "enabled"
+    ],
+    "ai.started": [
+      "provider",
+      "status",
+      "reason",
+      "elapsedMs",
+      "count"
+    ],
+    "ai.completed": [
+      "provider",
+      "status",
+      "reason",
+      "elapsedMs",
+      "count"
+    ],
+    "ai.fallback": [
+      "provider",
+      "status",
+      "reason",
+      "elapsedMs",
+      "count"
+    ],
+    "rpc.failed": [
+      "control",
+      "reason",
+      "status",
+      "elapsedMs"
+    ],
+    "runtime.error": [
+      "control",
+      "reason",
+      "count"
+    ],
+    "runtime.rejection": [
+      "control",
+      "reason",
+      "count"
+    ],
+    "extension.started": [
+      "status",
+      "reason",
+      "enabled"
+    ],
+    "extension.updated": [
+      "status",
+      "reason",
+      "enabled"
+    ],
+    "permission.changed": [
+      "status",
+      "reason",
+      "enabled"
+    ],
+    "diagnostics.initialized": [
+      "status",
+      "count",
+      "reason"
+    ],
+    "diagnostics.gap": [
+      "status",
+      "count",
+      "reason"
+    ],
+    "diagnostics.retention-pruned": [
+      "status",
+      "count",
+      "reason"
+    ],
+    "native-list.pending": [
+      "count",
+      "expected",
+      "observed",
+      "reason",
+      "phase"
+    ]
+  },
+  "counters": [
+    "count",
+    "target",
+    "processed",
+    "followed",
+    "requested",
+    "skipped",
+    "observed",
+    "expected",
+    "queueLength",
+    "attempt",
+    "elapsedMs",
+    "waitMs",
+    "nextAt",
+    "clickBy"
+  ]
+}
