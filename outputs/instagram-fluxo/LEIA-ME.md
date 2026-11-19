@@ -30,7 +30,7 @@ O painel mostra o estado da gravação em **Dados locais**. O gravador usa o Nat
 
 O registro começa nas novas execuções da versão 3.1.0. Se o gravador estiver indisponível, a extensão guarda até 20 mil eventos pendentes e tenta gravá-los novamente. O gravador roda sob demanda. A retenção das cópias em arquivo é de até 90 dias ou 256 MiB. O registro marca quando arquivos antigos são descartados.
 
-Para instalar o gravador neste projeto, execute `outputs/instagram-fluxo/native-host/install.ps1` com o mesmo usuário do Chrome. O instalador registra somente a extensão local existente. Depois recarregue a extensão e confira **Logs automáticos em arquivo ativos** em Dados locais. A versão acrescenta as permissões de Native Messaging e de alarme para a gravação e o reenvio.
+O gravador foi configurado para uma instalação Windows específica. Antes de registrar um gravador para outra instalação, configure o ID da extensão no instalador e no gravador e indique o executável do Python. Na instalação vinculada, execute `outputs/instagram-fluxo/native-host/install.ps1` com o mesmo usuário do Chrome, recarregue a extensão e confira **Logs automáticos em arquivo ativos** em Dados locais.
 
 Para consultar o registro de hoje no PowerShell, use `python outputs/instagram-fluxo/native-host/read_logs.py --today` a partir da pasta do projeto. O parâmetro `-Uninstall` do instalador reverte o registro do gravador e conserva os arquivos de log.
 
@@ -78,4 +78,4 @@ O planeta, a assinatura animada mPaiva_, os ícones e o rodapé com link para ht
 
 ## Validação e limites
 
-Os testes usam Chrome MV3 real, a interface da extensão e listas nativas simuladas em um perfil descartável, com tráfego externo bloqueado. Não foram enviados follows ou unfollows à conta restrita. Isso valida o executor e sua persistência, mas não garante disponibilidade ou carregamento completo do Instagram real.
+Os testes usam Chrome MV3, a interface da extensão e listas simuladas em um perfil descartável. A remoção depende dos perfis e controles que o Instagram disponibiliza durante a execução.

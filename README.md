@@ -49,9 +49,7 @@ As chaves ficam no cofre local. Ao ativar a IA, os dados públicos necessários 
 
 ## Logs em arquivo no Windows
 
-O coletor incluído usa Python e possui vínculo fixo com a instalação local original. Outras instalações precisam de uma configuração específica desse vínculo. O histórico no Chrome funciona independentemente do coletor.
-
-Na instalação vinculada, execute `outputs/instagram-fluxo/native-host/install.ps1`, recarregue a extensão e use **Dados locais → Verificar gravação dos logs**. Os arquivos ficam em `logs/instagram-fluxo`.
+O histórico funciona no Chrome. Para gravar diagnósticos em `logs/instagram-fluxo`, o coletor Windows incluso precisa do Python e de um vínculo com o ID da extensão. O instalador e o coletor vêm configurados para a instalação original. Uma instalação nova precisa configurar o próprio ID antes de registrar o coletor.
 
 Detalhes de funcionamento estão no [guia da extensão](outputs/instagram-fluxo/LEIA-ME.md).
 
