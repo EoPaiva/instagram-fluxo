@@ -1,14 +1,25 @@
 <p align="center">
-  <img src="outputs/instagram-fluxo/icons/upaiva-192.png" width="112" alt="Logo uPaiva">
+  <img src="assets/upaiva-animada.gif" width="160" height="160" alt="Logo orbital animada da uPaiva">
 </p>
 
 <h1 align="center">Instagram Fluxo</h1>
 
-<p align="center">Sugestões, filas e histórico local para administrar quem você segue no Instagram.</p>
+<p align="center">
+  <a href="outputs/instagram-fluxo/manifest.json"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FEoPaiva%2Finstagram-fluxo%2Fmain%2Foutputs%2Finstagram-fluxo%2Fmanifest.json&amp;query=%24.version&amp;prefix=v&amp;label=Vers%C3%A3o&amp;color=7c3aed&amp;style=for-the-badge" alt="Versão da extensão"></a>
+  <a href="#instalação-local"><img src="https://img.shields.io/badge/Chrome-Manifest_V3-1d4ed8?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Manifest V3, instalação local"></a>
+  <a href="https://upaiva.dev/"><img src="https://img.shields.io/badge/upaiva.dev-242934?style=for-the-badge" alt="Site upaiva.dev"></a>
+</p>
 
 <p align="center">
-  <a href="https://upaiva.dev">upaiva.dev</a> · Chrome Manifest V3 · JavaScript · Python
+  <img src="https://img.shields.io/badge/JavaScript-242934?style=for-the-badge&amp;logo=javascript&amp;logoColor=F7DF1E" alt="JavaScript">
+  <img src="https://img.shields.io/badge/HTML5-242934?style=for-the-badge&amp;logo=html5&amp;logoColor=F16529" alt="HTML5">
+  <img src="https://img.shields.io/badge/CSS-242934?style=for-the-badge&amp;logo=css&amp;logoColor=B7A3FF" alt="CSS">
+  <img src="https://img.shields.io/badge/Python-242934?style=for-the-badge&amp;logo=python&amp;logoColor=85B7E5" alt="Python">
+  <img src="https://img.shields.io/badge/PowerShell-242934?style=for-the-badge" alt="PowerShell">
+  <img src="https://img.shields.io/badge/SQLite-242934?style=for-the-badge&amp;logo=sqlite&amp;logoColor=61C5F5" alt="SQLite">
 </p>
+
+<p align="center">Sugestões, filas e histórico local para administrar quem você segue no Instagram.</p>
 
 ## O que faz
 
@@ -18,16 +29,6 @@
 - Executa unfollow de todas as contas em fila, com parada, histórico e conferência de resultados atrasados.
 - Mostra a fila em carrossel com miniaturas locais e os cards expansíveis de sugestões e histórico.
 - Mantém filas, tentativas e histórico no Chrome. O coletor Windows opcional grava diagnósticos em JSONL.
-
-## Stack
-
-| Camada | Tecnologias |
-| --- | --- |
-| Extensão | Chrome Manifest V3, service worker, Chrome Storage e Scripting |
-| Interface | HTML, CSS, JavaScript e Web Animations API |
-| Persistência | Armazenamento local do Chrome e cofre de chaves |
-| IA opcional | OpenAI, Anthropic Claude, Google Gemini e OpenRouter |
-| Diagnósticos Windows | Python, Native Messaging, JSONL, SQLite e PowerShell |
 
 ## Instalação local
 
