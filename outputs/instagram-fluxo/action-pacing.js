@@ -5,6 +5,8 @@
 const actionPacing = (() => {
   const prefix = 'instagramFluxoActionPacing:v1:';
   const defaults = Object.freeze({ minDelaySeconds: 45, maxDelaySeconds: 90, batchSize: 10, batchPauseMinutes: 10 });
+  const unfollowInterval = Object.freeze({ minDelaySeconds: 3, maxDelaySeconds: 8 });
+  const unfollowConfirmationWindowMs = 15000;
   const actions = new Set(['follow', 'unfollow']);
   const reasons = new Set(['unconfirmed-action', 'rate-limit', 'challenge']);
   const severity = { 'unconfirmed-action': 1, 'rate-limit': 2, challenge: 3 };
@@ -64,7 +66,7 @@ const actionPacing = (() => {
   }
 
   function view(state) {
-    return { settings: { ...state.settings }, nextAt: state.nextAt,
+    return { settings: { ...state.settings }, unfollowInterval: { ...unfollowInterval }, nextAt: state.nextAt,
       waitMs: Math.max(0, state.nextAt - Date.now()), batchCount: state.batchCount,
       clearedAt: state.clearedAt,
       block: state.block ? { ...state.block } : null };
@@ -97,7 +99,8 @@ const actionPacing = (() => {
     const state = await read(message.owner);
     const next = settings(message.settings);
     // Lowering settings cannot erase a previously scheduled delay or batch pause.
-    const minimumNextAt = state.lastActionAt === null ? 0 : state.lastActionAt + next.minDelaySeconds * 1000;
+    const minimum = state.lastAction === 'unfollow' ? unfollowInterval.minDelaySeconds : next.minDelaySeconds;
+    const minimumNextAt = state.lastActionAt === null ? 0 : state.lastActionAt + minimum * 1000;
     state.nextAt = Math.max(state.nextAt, minimumNextAt);
     state.settings = next;
     await save(state);
@@ -115,7 +118,8 @@ const actionPacing = (() => {
       error.notBefore = state.nextAt;
       throw error;
     }
-    const delay = randomBetween(state.settings.minDelaySeconds * 1000, state.settings.maxDelaySeconds * 1000);
+    const interval = message.action === 'unfollow' ? unfollowInterval : state.settings;
+    const delay = randomBetween(interval.minDelaySeconds * 1000, interval.maxDelaySeconds * 1000);
     let count = state.batchCount + 1;
     const batchPause = count >= state.settings.batchSize ? state.settings.batchPauseMinutes * 60000 : 0;
     if (batchPause) count = 0;
@@ -124,9 +128,10 @@ const actionPacing = (() => {
     state.lastAction = message.action;
     state.nextAt = now + delay + batchPause;
     await save(state);
-    // A permit expires before another minimum-interval permit can become available.
-    // Native dispatch treats clickBy as a strict deadline and never reuses the permit.
-    return { ...view(state), clickBy: now + Math.min(30000, state.settings.minDelaySeconds * 1000) };
+    // The worker revokes an unfollow permit when it authorizes another attempt
+    // for this account. Its own native confirmation can finish after the interval.
+    const clickWindow = message.action === 'unfollow' ? unfollowConfirmationWindowMs : Math.min(30000, interval.minDelaySeconds * 1000);
+    return { ...view(state), clickBy: now + clickWindow };
   }
 
   async function block(message) {

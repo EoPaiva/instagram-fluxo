@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#080808">
+  <title>Meta Insights · Instagram Fluxo</title>
+  <link rel="icon" href="icons/upaiva-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="meta-insights.css">
+  <script src="meta-insights.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="icons/upaiva-32.png" width="24" height="24" alt="">
+      <a href="dashboard.html">Instagram Fluxo</a>
+    </div>
+  </header>
+  <main>
+    <h1>Meta Insights</h1>
+    <p class="intro">Consulte as métricas da sua conta profissional do Instagram.</p>
+
+    <section class="card" aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Consultar conta</h2>
+      <form id="insights-form" autocomplete="off">
+        <div class="field">
+          <label for="insights-account">ID da conta profissional</label>
+          <input id="insights-account" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,31}" maxlength="32" required aria-describedby="insights-account-help" autocomplete="off" spellcheck="false">
+          <p id="insights-account-help" class="help">Informe o ID numérico do Instagram usado no app da Meta.</p>
+        </div>
+        <div class="field">
+          <label for="insights-token">Token de acesso do Instagram</label>
+          <input id="insights-token" type="password" maxlength="2048" required aria-describedby="insights-token-help" autocomplete="off" spellcheck="false">
+          <p id="insights-token-help" class="help">Use um token do Instagram Login. O token é apagado do campo ao consultar e não fica salvo.</p>
+        </div>
+        <div class="field">
+          <label for="insights-period">Período</label>
+          <select id="insights-period" aria-describedby="insights-period-help">
+            <option value="7">Últimos 7 dias completos</option>
+            <option value="14">Últimos 14 dias completos</option>
+            <option value="28">Últimos 28 dias completos</option>
+          </select>
+          <p id="insights-period-help" class="help">Datas em UTC.</p>
+        </div>
+        <div class="actions">
+          <button id="insights-submit" type="submit">Consultar métricas</button>
+          <button id="insights-cancel" type="button" hidden>Cancelar consulta</button>
+        </div>
+        <p id="insights-status" class="status" role="status" aria-atomic="true"></p>
+      </form>
+      <details>
+        <summary>Como obter acesso</summary>
+        <p>No painel do seu app da Meta, abra Instagram e selecione a configuração da API com Instagram Login. Gere um token para sua conta profissional com as permissões <code>instagram_business_basic</code> e <code>instagram_business_manage_insights</code>.</p>
+        <a href="https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/get-started" target="_blank" rel="noopener noreferrer">Guia da Meta para obter o token e o ID da conta (nova aba)</a>
+      </details>
+    </section>
+
+    <section class="card" id="insights-results" aria-labelledby="metrics-heading" hidden>
+      <h2 id="metrics-heading">Métricas do período</h2>
+      <p class="result-period" id="insights-result-period"></p>
+      <dl class="metrics">
+        <div><dt>Alcance</dt><dd data-metric="reach">Indisponível</dd></div>
+        <div><dt>Visualizações do conteúdo</dt><dd data-metric="views">Indisponível</dd></div>
+        <div><dt>Contas engajadas</dt><dd data-metric="accounts_engaged">Indisponível</dd></div>
+        <div><dt>Interações</dt><dd data-metric="total_interactions">Indisponível</dd></div>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>

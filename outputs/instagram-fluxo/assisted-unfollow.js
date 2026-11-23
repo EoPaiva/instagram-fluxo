@@ -102,9 +102,12 @@
       if (!followingLabels.has(label) && !followLabels.has(label)) continue;
       for (let parent = button.parentElement; parent && parent !== list; parent = parent.parentElement) {
         const names = new Set();
+        const labels = new Set();
         for (const link of parent.querySelectorAll('a[href]')) {
           const name = linkedPath(link).match(profilePath)?.[1]?.toLowerCase();
-          if (name) names.add(name);
+          if (!name) continue;
+          names.add(name);
+          if (visible(link) && textOf(link).replace(/^@/, '') === name) labels.add(name);
         }
         if (names.size === 0) continue;
         const anotherAction = controls(parent).some(other => other !== button &&
@@ -112,8 +115,9 @@
         );
         if (names.size !== 1 || anotherAction) break;
         const [name] = names;
+        if (!labels.has(name)) continue;
         if (profiles.has(name)) throw new Error('A lista mostra @' + name + ' mais de uma vez. Execução interrompida.');
-        profiles.set(name, { name, button, following: followingLabels.has(label) });
+        profiles.set(name, { name, button, row: parent, following: followingLabels.has(label) });
         break;
       }
     }
@@ -157,18 +161,29 @@
     return control.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
   }
 
-  function knownConfirmation(dialog, name) {
+  function identifiesConfirmation(dialog, name, required = true) {
+    const mentions = [...dialog.innerText.matchAll(new RegExp('@(' + usernamePattern + ')(?![a-z0-9._])', 'gi'))]
+      .map(match => match[1].toLowerCase());
+    const profileLinks = [...dialog.querySelectorAll('a[href]')].filter(visible).flatMap(anchor => {
+      const match = linkedPath(anchor).match(profilePath);
+      return match ? [match[1].toLowerCase()] : [];
+    });
+    const namedHeadings = [...dialog.querySelectorAll('h1,h2,h3,[role="heading"]')].filter(visible).flatMap(element => {
+      const heading = textOf(element);
+      if (heading === name) return [name];
+      const match = heading.match(new RegExp('^(?:unfollow|deixar de seguir) (' + usernamePattern + ')\\??$', 'i'));
+      return match ? [match[1].toLowerCase()] : [];
+    });
+    const identities = [...mentions, ...profileLinks, ...namedHeadings];
+    return (!required || identities.length > 0) && identities.every(identity => identity === name);
+  }
+
+  function knownConfirmation(dialog, name, required = true) {
     const buttons = controls(dialog);
     const confirm = buttons.filter(button => unfollowLabels.has(textOf(button)));
     const cancel = buttons.filter(button => cancelLabels.has(textOf(button)));
     if (confirm.length !== 1 || cancel.length !== 1) return null;
-    const mentions = [...dialog.innerText.matchAll(new RegExp('@(' + usernamePattern + ')', 'gi'))];
-    const profileLinks = [...dialog.querySelectorAll('a[href]')].flatMap(anchor => {
-      const match = linkedPath(anchor).match(profilePath);
-      return match ? [match[1].toLowerCase()] : [];
-    });
-    if (mentions.some(match => match[1].toLowerCase() !== name) ||
-        profileLinks.some(username => username !== name)) return null;
+    if (!identifiesConfirmation(dialog, name, required)) return null;
     return confirm[0];
   }
 
@@ -184,17 +199,17 @@
   }
 
   function wait(ms, signal) {
-    signal.throwIfAborted();
+    signal?.throwIfAborted();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        signal.removeEventListener('abort', abort);
+        signal?.removeEventListener('abort', abort);
         resolve();
       }, ms);
       function abort() {
         clearTimeout(timer);
         reject(signal.reason);
       }
-      signal.addEventListener('abort', abort, { once: true });
+      signal?.addEventListener('abort', abort, { once: true });
     });
   }
 
@@ -205,7 +220,7 @@
     );
   }
 
-  async function open(owner, signal) {
+  async function open(owner, signal, { allowUnknownTotal = false } = {}) {
     signal?.throwIfAborted();
     const expected = '/' + owner;
     if (!profilePath.test(expected)) throw new Error('Perfil inválido.');
@@ -215,10 +230,13 @@
     if (!account) throw new Error('Abra o seu próprio perfil para parar de seguir.');
     const current = dialogs(); checkAlerts(current);
     if (current.length && (current.length !== 1 || !followingDialog(current))) throw new Error('Feche a janela aberta no Instagram antes de iniciar.');
-    const total = countOf(account.counter);
-    if (!Number.isSafeInteger(total) || total < 0) throw new Error('O Instagram não mostrou a contagem de Seguindo.');
+    const total = countOf(account.counter) ?? null;
+    if (total === null && !allowUnknownTotal) throw new Error('O Instagram não mostrou a contagem de Seguindo.');
     if (total === 0) return { total };
-    if (!current.length) account.counter.click();
+    if (!current.length) {
+      if (!account.counter) throw new Error('Não consegui localizar a lista Seguindo.');
+      account.counter.click();
+    }
     const started = performance.now();
     while (performance.now()-started < responseTimeout) {
       signal?.throwIfAborted();const visibleDialogs=dialogs();checkAlerts(visibleDialogs);
@@ -229,6 +247,52 @@
     throw new Error('A lista Seguindo demorou para abrir.');
   }
 
+  function inventoryPage(owner, { reset = false, advance = false } = {}) {
+    const path = location.pathname;
+    if (!instagram() || path.match(accountPath)?.[1]?.toLowerCase() !== owner) throw new Error('A conta conectada mudou.');
+    const account = ownProfile(path);
+    if (!account) throw new Error('Abra seu próprio perfil para ler a lista Seguindo.');
+    const expectedCount = countOf(account.counter) ?? null;
+    const visibleDialogs = dialogs();
+    checkAlerts(visibleDialogs);
+    if (expectedCount === 0 && !visibleDialogs.length) {
+      return { rows: [], expectedCount: 0, atBottom: true, loading: false, unidentified: false };
+    }
+    const list = followingDialog(visibleDialogs);
+    if (!list || visibleDialogs.length !== 1) throw new Error('A lista Seguindo foi fechada ou mudou.');
+    ensureUnfiltered(list);
+    const scrollers = scrollContainers(list);
+    if (scrollers.length > 1) throw new Error('Há mais de uma área de rolagem na lista Seguindo.');
+    const scroller = scrollers[0];
+    if (scroller && (reset || advance)) {
+      scroller.scrollTop = reset ? 0 : scroller.scrollTop + Math.max(1, Math.floor(scroller.clientHeight * 0.75));
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    }
+    const text = value => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '').slice(0, 160);
+    const observed = [...rows(list).values()].filter(entry => entry.following);
+    const knownControls = new Set(observed.map(entry => entry.button));
+    const found = observed.map(entry => {
+      const nameLink = [...entry.row.querySelectorAll('a[href]')].find(link =>
+        linkedPath(link).match(profilePath)?.[1]?.toLowerCase() === entry.name && text(link.innerText));
+      const explicit = [...entry.row.querySelectorAll('[data-profile-category], [data-category]')].find(node =>
+        visible(node) && !node.closest(controlSelector));
+      const category = text(entry.row.getAttribute('data-profile-category') || explicit?.getAttribute('data-profile-category') ||
+        explicit?.getAttribute('data-category') || explicit?.innerText);
+      const displayName = [...entry.row.querySelectorAll('span, [dir="auto"]')].find(node =>
+        node.childElementCount === 0 && visible(node) && !node.closest('a, ' + controlSelector + ', [data-profile-category], [data-category]') &&
+        text(node.innerText) && normal(node.innerText).replace(/^@/, '') !== entry.name);
+      const label = text(entry.row.getAttribute('data-display-name') || displayName?.innerText || nameLink?.innerText);
+      return { username: entry.name, ...(label && { label }), ...(category && { category }) };
+    });
+    return { rows: found, expectedCount, atBottom: !scroller || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2,
+      loading: loading(list), unidentified: relationshipControls(list).some(control => !knownControls.has(control)) };
+  }
+
+  async function guardRemoval(owner, name, dispatchId) {
+    const reply = await chrome.runtime.sendMessage({ type: 'cleanerDispatchCheck', owner, username: name, dispatchId });
+    return reply?.ok ? reply.data?.state ?? 'unfollow-not-authorized' : reply?.code ?? 'unfollow-not-authorized';
+  }
+
   async function close(owner, signal, target) {
     const path = location.pathname.replace(/\/$/,'').toLowerCase();
     if (!instagram() || !['/'+owner,'/'+owner+'/following'].includes(path) || !ownProfile(location.pathname)) throw new Error('A conta conectada mudou.');
@@ -237,7 +301,7 @@
     if (!current.length) return;
     const list = followingDialog(current);
     const others = current.filter(dialog => dialog !== list);
-    if (list && others.length === 1 && target && knownConfirmation(others[0], target)) {
+    if (list && others.length === 1 && target && knownConfirmation(others[0], target, false)) {
       const cancel = controls(others[0]).filter(button => cancelLabels.has(textOf(button)));
       if (cancel.length !== 1 || !clickable(cancel[0])) throw new Error('A confirmação aberta não pode ser fechada com segurança.');
       signal?.throwIfAborted();cancel[0].click();
@@ -258,7 +322,8 @@
     throw new Error('A lista Seguindo não fechou.');
   }
 
-  async function run({ owner, signal: stop, excluded = [], onUpdate = () => {}, beforeAction, onConfirmed }) {
+  async function run({ owner, signal: stop, excluded = [], selected = null, protectedNames = [],
+    onUpdate = () => {}, beforeAction, onConfirmed, onProtected = async () => {} }) {
     if (running) throw new Error('Já existe uma execução nesta aba.');
     running = true;
     const controller = new AbortController();
@@ -273,6 +338,9 @@
     let lastActionAt = Number.NEGATIVE_INFINITY;
     const processed = new Set();
     const excludedNames = new Set(excluded);
+    const selection = selected === null ? null : new Set(selected);
+    const protectedSet = new Set(protectedNames);
+    const protectedFollowing = new Set();
     const result = message => ({ count: processed.size, message, current, remaining: countOf(account?.counter) ?? null });
     const report = message => onUpdate(result(message));
     const cancel = message => controller.abort(new Error(message));
@@ -317,6 +385,10 @@
       const available = rows(list);
       const reverted = [];
       for (const row of available.values()) {
+        if (protectedSet.has(row.name)) {
+          if (row.following) protectedFollowing.add(row.name);
+          else protectedFollowing.delete(row.name);
+        }
         if (row.following && processed.delete(row.name)) reverted.push('@' + row.name);
       }
       if (reverted.length) {
@@ -325,7 +397,9 @@
       return available;
     }
 
-    const nextRow = available => [...available.values()].find(row => row.following && !excludedNames.has(row.name));
+    const nextRow = available => [...available.values()].find(row => row.following && !excludedNames.has(row.name) &&
+      !protectedSet.has(row.name) && (!selection || selection.has(row.name)));
+    const selectionComplete = () => selection && [...selection].every(name => processed.has(name) || protectedSet.has(name));
     const unidentified = available => relationshipControls(list).some(button =>
       ![...available.values()].some(row => row.button === button));
     let scanMoves = 0;
@@ -363,6 +437,10 @@
         if (performance.now() - lastActionAt < responseTimeout) continue;
         if (atEmptyList && countOf(account.counter) === 0) return { message: 'O Instagram indica que você não segue nenhuma conta.' };
         const remaining = countOf(account.counter);
+        if (selection) return { message: 'Conferindo os perfis restantes da seleção.', reason: 'native-selected-pending' };
+        if (remaining > 0 && remaining === protectedFollowing.size) return {
+          message: 'Restam apenas os perfis protegidos na lista Seguindo.', reason: 'native-protected-only',
+        };
         const followControls = controls(list).filter(button=>button.closest(dialogSelector)===list && followLabels.has(textOf(button))).length;
         const excludedFollowing = [...readRows().values()].filter(row => row.following && excludedNames.has(row.name)).length;
         return { message: excludedFollowing > 0
@@ -374,7 +452,8 @@
             Number.isSafeInteger(remaining) && remaining > 0 ? 'native-following-unavailable' : 'native-list-pending',
           diagnostics: { followingCount: remaining ?? null, followingControls: relationshipControls(list).length, excludedFollowing, followControls } };
       }
-      throw new Error('O Instagram demorou para carregar mais perfis. Confira a lista antes de iniciar de novo.');
+      return { message: 'O Instagram demorou para carregar mais perfis da lista Seguindo.',
+        reason: selection ? 'native-selected-pending' : 'native-following-unavailable' };
     }
 
     async function pauseBetweenProfiles() {
@@ -391,6 +470,7 @@
       };
       target.button.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
       await wait(100, signal);
+      if (!await canClick(target.name, permit.dispatchId)) return false;
       scope();
       const before = readRows();
       const row = before.get(target.name);
@@ -415,8 +495,12 @@
           changedSince = undefined;
           if (confirmed) continue;
           const confirm = knownConfirmation(modal, current);
-          if (!confirm) throw new Error('A janela de confirmação do Instagram não foi reconhecida.');
+          if (!confirm) throw new Error('O Instagram não identificou @' + current + ' na confirmação. A remoção não foi confirmada.');
           if (!clickable(confirm)) continue;
+          if (!await canClick(target.name, permit.dispatchId)) return false;
+          if (scope(true) !== modal || knownConfirmation(modal, current) !== confirm || !clickable(confirm)) {
+            throw new Error('A janela de confirmação do Instagram mudou.');
+          }
           lastActionAt = performance.now();
           authorize();
           confirm.click();
@@ -434,10 +518,26 @@
           !loading(list) && (empty(list, positiveCountBefore ? account.counter : null) ||
             (samePosition && neighborRemains)));
         changedSince = changed ? (changedSince ?? performance.now()) : undefined;
-        if (changedSince !== undefined && performance.now() - changedSince >= changeSettleTime) return;
+        if (changedSince !== undefined && performance.now() - changedSince >= changeSettleTime) return true;
       }
       const error = new Error('O Instagram não confirmou a mudança.');
       error.code = 'native-confirmation-timeout';error.phase = 'verifying-native';
+      throw error;
+    }
+
+    async function canClick(name, dispatchId) {
+      const decision = await guardRemoval(owner, name, dispatchId);
+      if (decision === 'allowed') return true;
+      if (decision === 'unfollow-protected' && !clickSent) {
+        protectedSet.add(name);
+        protectedFollowing.add(name);
+        await onProtected(name);
+        return false;
+      }
+      const error = new Error(decision === 'unfollow-protected'
+        ? 'O perfil foi protegido durante uma ação. Confira o Instagram antes de retomar.'
+        : 'A autorização para remover este perfil foi suspensa.');
+      error.code = decision;
       throw error;
     }
 
@@ -459,24 +559,31 @@
 
       while (true) {
         scope();
+        if (selectionComplete()) return { ...result('Seleção conferida.'), reason: 'native-selected-complete', protectedFollowing: [...protectedFollowing] };
         let target = nextRow(readRows());
         if (!target) {
           if (unidentified(readRows())) {
             throw new Error('A lista mudou. Há um botão Seguindo sem perfil identificável.');
           }
           const scanned = await scanMore();
-          if (scanned.message) return { ...result(scanned.message), reason:scanned.reason, diagnostics:scanned.diagnostics };
+          if (scanned.message) return { ...result(scanned.message), reason:scanned.reason, diagnostics:scanned.diagnostics,
+            protectedFollowing: [...protectedFollowing] };
           target = scanned.target;
           if (!target) continue;
         }
         report('Próximo perfil: @' + target.name + '.');
         const permit = await beforeAction(target.name);
         signal.throwIfAborted();
+        if (permit?.skip) {
+          if (permit.skip === 'protected') { protectedSet.add(target.name); protectedFollowing.add(target.name); }
+          else excludedNames.add(target.name);
+          continue;
+        }
         await pauseBetweenProfiles();
         scope();
         const fresh = readRows().get(target.name);
         if (!fresh?.following) throw new Error('A linha de @' + target.name + ' mudou durante a espera.');
-        await clickAndVerify(fresh, permit);
+        if (!await clickAndVerify(fresh, permit)) continue;
         scanMoves = 0;
         await onConfirmed(target.name);
         clickSent = false;
@@ -499,5 +606,5 @@
     }
   }
 
-  globalThis.instagramFlowAssistedUnfollow = { open, close, run };
+  globalThis.instagramFlowAssistedUnfollow = { open, close, run, inventoryPage, guardRemoval, identifiesConfirmation };
 })();

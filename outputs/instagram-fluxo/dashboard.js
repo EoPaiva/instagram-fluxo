@@ -9,6 +9,7 @@
   };
   const instagramOrigin = 'https://www.instagram.com/*';
   const referencesKey = 'instagramFluxoAudienceReferences';
+  const suggestionCheckPrefix = 'instagramFluxoSuggestionCheck:';
   const discoveryLogPrefix = 'instagramFluxoDiscoveryLog:';
   const discoveryLogLines = 60;
   const discoveryLogLineLength = 240;
@@ -23,24 +24,28 @@
     providerSummary: $('provider-summary'), vaultForm: $('vault-form'), vaultHint: $('vault-hint'),
     vaultPassword: $('vault-password'), vaultConfirm: $('vault-confirm'), vaultConfirmLabel: $('vault-confirm-label'),
     vaultSubmit: $('vault-submit'), lockVault: $('lock-vault'),
-    configForm: $('config-form'), profilePrompt: $('profile-prompt'),
+    configForm: $('config-form'), profilePrompt: $('profile-prompt'), profileAnalysisStatus: $('profile-analysis-status'),
     profileResult: $('profile-result'), profileName: $('profile-name'), niche: $('niche'),
     loadProfile: $('load-profile'), analyze: $('analyze'), discover: $('discover'), follow: $('follow'), stop: $('stop'),
+    refreshSuggestions: $('refresh-suggestions'), suggestionsStatus: $('suggestions-status'),
     automaticFollowForm: $('automatic-follow-form'), automaticFollowAmount: $('automatic-follow-amount'),
     automaticFollowSource: $('automatic-follow-source'),
     startAutomaticFollow: $('start-automatic-follow'), automaticFollowQuota: $('automatic-follow-quota'),
     referenceInputs: [$('reference-1'), $('reference-2'), $('reference-3')],
     saveReferences: $('save-references'), referenceStatus: $('reference-status'),
-    searchBlock: $('search-block'), selectionCount: $('selection-count'),
+    searchBlock: $('search-block'), selectionCount: $('selection-count'), selectSuggestionBatch: $('select-suggestion-batch'),
     progress: $('progress-bar'), progressMeter: $('flow-progress-meter'), flowStatus: $('flow-status'),
     discoveryLog: $('discovery-log'), discoveryLogText: $('discovery-log-text'),
     discoveryLogStatus: $('discovery-log-status'), copyDiscoveryLog: $('copy-discovery-log'),
     recommendationSection: $('recommendation-section'), recommendations: $('recommendations'),
     history: $('history'), historyStatus: $('history-status'), refreshHistory: $('refresh-history'),
+    historyDisclosure: $('history-disclosure'), historyViewport: $('history-viewport'),
+    historyMeasure: $('history-row-measure'), historyCount: $('history-count'), historyKeys: $('history-keys'),
     unfollowAll: $('unfollow-all'),
     localSummary: $('local-summary'), localUpdated: $('local-updated'), localStatus: $('local-data-status'),
     exportData: $('export-data'), refreshLocal: $('refresh-local-data'),
     resumeFollow: $('resume-follow'),
+    openSidePanel: $('open-side-panel'), sidePanelError: $('side-panel-error'),
     aiMode: $('ai-mode'), aiModeStatus: $('ai-mode-status'),
     pacingMin: $('pacing-min-delay'), pacingMax: $('pacing-max-delay'),
     pacingBatch: $('pacing-batch-size'), pacingPause: $('pacing-batch-pause'),
@@ -57,7 +62,6 @@
     profile: null,
     recommendations: [],
     selected: new Set(),
-    deselected: new Set(),
     operation: null,
     saving: false,
     quotaGeneration: 0,
@@ -77,6 +81,65 @@
     queueMessage: '',
     queueExecuting: false,
   };
+  let cleanerPanel;
+  let backupPanel;
+  let lastSideResult;
+  const sideLink = chrome.sidePanel?.open && globalThis.instagramFluxoSideLink?.createDashboard({ tabId,
+    onStop: ({ runId }) => stopOperation(runId),
+  });
+
+  function sideUpcoming(run) {
+    const candidates = run?.upcoming ?? run?.queue;
+    if (!candidates?.length) return [];
+    const seen = new Set([run.current, ...(run.completed ?? []), ...(run.uncertain ?? []), ...(run.references ?? []),
+      state.profile?.username]);
+    const followers = run.kind === 'follow' ? new Set(state.database?.snapshots?.followers?.usernames ?? []) : null;
+    const upcoming = [];
+    for (const value of candidates) {
+      const name = cleanUsername(value);
+      if (!name || seen.has(name) || (followers && (followers.has(name) || state.followedOnce.has(name) || state.queueCandidates.get(name)?.alreadyFollows))) continue;
+      seen.add(name);
+      upcoming.push(name);
+      if (upcoming.length === 4) break;
+    }
+    return upcoming;
+  }
+
+  function sideFields(run) {
+    return { current: run?.current ?? null, target: run?.target ?? 0, processed: run?.processed ?? 0,
+      followed: run?.followed ?? 0, requested: run?.requested ?? 0, upcoming: sideUpcoming(run) };
+  }
+
+  function activeSideSnapshot() {
+    const operation = state.operation;
+    if (!operation?.stoppable) return null;
+    if (operation.sideFinished) return operation.sideFinished;
+    const run = operation.sideProgress ?? (state.queueRun?.id === operation.runId ? state.queueRun : null);
+    const stopping = operation.signal.aborted;
+    const phase = ['waiting', 'dispatching'].includes(run?.phase) ? run.phase : 'running';
+    const status = stopping ? 'stopping' : run?.status && run.status !== 'running' ? run.status : phase;
+    const canStop = !stopping && !['paused', 'completed', 'error'].includes(status);
+    return { ...sideFields(run), runId: operation.stopToken, owner: cleanUsername(state.profile?.username), kind: operation.sideKind,
+      status, message: ui.flowStatus.textContent, canStop };
+  }
+
+  function publishSideQueue() {
+    if (!sideLink) return;
+    const owner = cleanUsername(state.profile?.username);
+    const active = activeSideSnapshot();
+    if (active) { sideLink.publish(active); return; }
+    if (lastSideResult?.owner === owner) { sideLink.publish(lastSideResult); return; }
+    const run = owner ? state.queueRun : null;
+    sideLink.publish({ ...sideFields(run), runId: run?.id ?? null, owner, kind: run?.kind ?? null,
+      status: run?.status === 'running' ? 'interrupted' : run?.status ?? 'idle',
+      message: run?.reason ? automaticFollowOutcomes[run.reason] || run.reason : '', canStop: false });
+  }
+
+  function updateSideProgress(progress) {
+    if (!sideLink || !state.operation?.stoppable) return;
+    state.operation.sideProgress = { ...sideFields(progress), phase: progress.phase, status: progress.status };
+    publishSideQueue();
+  }
 
   function avatarUrl(value) {
     if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f\\]/.test(value)) return '';
@@ -97,6 +160,7 @@
   }
 
   function renderQueue() {
+    publishSideQueue();
     if (!globalThis.instagramQueueView) return;
     const owner = cleanUsername(state.profile?.username);
     const run = owner ? state.queueRun : null;
@@ -172,6 +236,7 @@
     if (typeof completion === 'number') ui.progressMeter.value = completion;
     else ui.progressMeter.removeAttribute('value');
     report(ui.flowStatus, message, isError);
+    if (state.operation?.stoppable) publishSideQueue();
   }
 
   function showDiscoveryLog(log) {
@@ -309,14 +374,15 @@
     ui.loadProfile.disabled = busy || state.savingReferences || tabId === null;
     ui.analyze.disabled = busy || state.saving || state.savingReferences || tabId === null || !configured;
     ui.discover.disabled = busy || state.savingReferences || !hasProfile;
-    ui.follow.disabled = busy || blocked || !state.selected.size;
+    if (ui.refreshSuggestions) ui.refreshSuggestions.disabled = ui.discover.disabled || tabId === null;
+    ui.follow.disabled = busy || blocked || !hasProfile || !state.selected.size;
     ui.saveReferences.disabled = busy || state.savingReferences || !hasProfile;
     ui.automaticFollowAmount.disabled = busy || state.savingReferences || !hasProfile;
     if (ui.automaticFollowSource) ui.automaticFollowSource.disabled = busy || state.savingReferences || !hasProfile;
     ui.startAutomaticFollow.disabled = busy || blocked || state.savingReferences || !hasProfile;
     for (const input of ui.referenceInputs) input.disabled = busy || state.savingReferences;
     ui.stop.hidden = !state.operation?.stoppable;
-    ui.stop.disabled = Boolean(state.operation?.controller.signal.aborted);
+    ui.stop.disabled = Boolean(state.operation?.signal.aborted || state.operation?.finishing);
     ui.configForm.querySelector('button').disabled = configBusy || !unlocked;
     ui.provider.disabled = configBusy || !unlocked;
     ui.model.disabled = configBusy || !unlocked;
@@ -327,6 +393,7 @@
     ui.lockVault.disabled = configBusy || !unlocked;
     ui.unfollowAll.disabled = busy || blocked || !hasProfile;
     for (const control of [ui.exportData, ui.refreshLocal]) if (control) control.disabled = busy || !hasProfile;
+    backupPanel?.sync();
     if (ui.resumeFollow) {
       ui.resumeFollow.hidden = !state.pendingRun;
       ui.resumeFollow.disabled = busy || blocked || !hasProfile;
@@ -334,17 +401,23 @@
     if (ui.aiMode) ui.aiMode.disabled = busy;
     const batchLimit = globalThis.instagramFlow?.followBatchLimit;
     const atBatchLimit = state.selected.size >= batchLimit;
+    if (ui.selectSuggestionBatch) {
+      const available = state.recommendations.length - state.selected.size;
+      ui.selectSuggestionBatch.disabled = busy || available <= 0 || atBatchLimit;
+      ui.selectSuggestionBatch.textContent = `Selecionar até ${batchLimit ?? 15} perfis`;
+    }
     for (const input of ui.recommendations.querySelectorAll('input')) {
       input.disabled = busy || (atBatchLimit && !input.checked);
     }
     if (!state.profile) {
       ui.profilePrompt.textContent = tabId === null
         ? 'Abra o painel pelo ícone da extensão enquanto estiver no seu perfil do Instagram.'
-        : 'Carregue seu perfil para configurar as referências e usar o modo automático.';
+        : 'Carregue seu perfil para abrir os controles do fluxo escolhido.';
     }
     ui.selectionCount.textContent = state.recommendations.length
       ? `${state.selected.size} de ${state.recommendations.length} selecionados · até ${batchLimit} por lote`
       : '';
+    cleanerPanel?.sync();
   }
 
   function updateProvider(selected) {
@@ -369,11 +442,11 @@
     return cleanUsername(text.replace(/^@/, ''));
   }
 
-  function readReferences() {
+  function readReferences(focus = true) {
     const references = ui.referenceInputs.map(input => referenceUsername(input.value));
     const invalid = references.findIndex(value => !value);
     if (invalid !== -1) {
-      ui.referenceInputs[invalid].focus();
+      if (focus) ui.referenceInputs[invalid].focus();
       throw new Error('Informe um @nome ou link válido em cada um dos três perfis de referência.');
     }
     if (new Set(references).size !== 3) {
@@ -419,6 +492,7 @@
       const references = readReferences();
       refreshControls();
       await persistReferences(references);
+      await showSavedSuggestions(references);
     } catch (error) {
       report(ui.referenceStatus, errorText(error), true);
     } finally {
@@ -552,34 +626,50 @@
     }
   }
 
-  async function run(action, { message, kind = 'profile', runId = crypto.randomUUID(), stoppable = false, showMeter = false }) {
+  async function run(action, { message, kind = 'profile', sideKind = kind, runId = crypto.randomUUID(), stoppable = false, showMeter = false }) {
     if (state.operation) return;
-    const controller = new AbortController();
+    const machine = globalThis.instagramFluxoQueueMachine;
+    if (!machine) {
+      showProgress('Reabra o painel para carregar o executor da fila.', true);
+      return;
+    }
+    const operation = machine.createOperation(signal => action(signal, operation.checkpointDispatch));
+    const { signal } = operation;
     const began=Date.now();
     const owner=state.profile?.username;
     let status='finished';
     let outcome;
-    state.operation = { controller, stoppable, runId, kind };
+    state.operation = { ...operation, stoppable, runId, kind, sideKind, stopToken: stoppable ? crypto.randomUUID() : null };
     globalThis.instagramFluxoDiagnostics?.context({owner,runId});
     void diagnostic({event:'workflow.start',action:kind});
     showProgress(message, false, showMeter ? null : undefined);
     refreshControls();
     if (stoppable) ui.progress.scrollIntoView({ block: 'nearest' });
     try {
-      outcome = await action(controller.signal);
+      outcome = await operation.start();
       if (['completed','paused','stopped','error'].includes(outcome?.workflowStatus)) status = outcome.workflowStatus;
     } catch (error) {
-      const interrupted = !error?.persistenceFailure && (controller.signal.aborted || error?.name === 'AbortError');
+      const interrupted = !error?.persistenceFailure && (signal.aborted || error?.name === 'AbortError');
       status = interrupted ? 'stopped' : error?.workflowStatus === 'paused' ? 'paused' : 'error';
       outcome = { reason:error?.reason || error?.code || (error?.clickSent ? 'confirmation-pending' : interrupted ? 'interrupted' : 'operation-failed'),
         phase:error?.phase, username:error?.username };
       void diagnostic({event:'workflow.error',level:'warn',action:kind,status,...outcome,interrupted});
       if (error?.workflowMessage) showProgress(error.workflowMessage, !interrupted || Boolean(error?.clickSent));
       else if (error?.clickSent) showProgress(errorText(error), true);
-      else if (controller.signal.aborted || error?.name === 'AbortError') showProgress('Fluxo interrompido.');
+      else if (signal.aborted || error?.name === 'AbortError') showProgress('Fluxo interrompido.');
       else showProgress(errorText(error), true);
     } finally {
-      void diagnostic({event:'workflow.end',action:kind,status:controller.signal.aborted && status === 'finished' ? 'stopped' : status,
+      const finalStatus = signal.aborted && status === 'finished' ? 'stopped' : status;
+      const lastSnapshot = stoppable && sideLink ? activeSideSnapshot() : null;
+      state.operation.finishing = true;
+      if (lastSnapshot) {
+        const displayStatus = finalStatus === 'finished' ?
+          (['paused', 'completed', 'error'].includes(lastSnapshot.status) ? lastSnapshot.status : 'completed') : finalStatus;
+        lastSideResult = { ...lastSnapshot, status: displayStatus, canStop: false };
+        state.operation.sideFinished = lastSideResult;
+        publishSideQueue();
+      }
+      void diagnostic({event:'workflow.end',action:kind,status:finalStatus,
         reason:outcome?.reason,phase:outcome?.phase,elapsedMs:Date.now()-began});
       globalThis.instagramFluxoDiagnostics?.context({owner:state.profile?.username});
       void globalThis.instagramFluxoDiagnostics?.refresh();
@@ -588,6 +678,14 @@
       renderQueue();
       refreshControls();
     }
+  }
+
+  function stopOperation(stopToken) {
+    const operation = state.operation;
+    if (!operation?.stoppable || operation.stopToken !== stopToken || operation.finishing || !operation.requestStop()) return false;
+    showProgress('Interrompendo…');
+    refreshControls();
+    return true;
   }
 
   function renderPacing(value, populate = false) {
@@ -607,8 +705,11 @@
         ' A fila permanece pausada. Resolva o aviso no Instagram antes de liberar a retomada.'
       : '';
     const settings = value.settings;
+    const unfollow = value.unfollowInterval;
     report(ui.pacingStatus, value.block ? unconfirmed ? 'Pausa de conferência salva neste navegador.' : 'Pausa por restrição ativa e salva neste navegador.' :
-      `Ritmo salvo: ${settings.minDelaySeconds}–${settings.maxDelaySeconds} s entre tentativas; pausa de ${settings.batchPauseMinutes} min a cada ${settings.batchSize}.` +
+      `Seguir: ${settings.minDelaySeconds}–${settings.maxDelaySeconds} s.` +
+      (unfollow ? ` Remover: ${unfollow.minDelaySeconds}–${unfollow.maxDelaySeconds} s.` : '') +
+      ` Pausa de ${settings.batchPauseMinutes} min a cada ${settings.batchSize} tentativas.` +
       (value.waitMs > 0 ? ' Próxima ação a partir de ' + dateFormat.format(value.nextAt) + '.' : ''));
     refreshControls();
     renderQueue();
@@ -650,7 +751,7 @@
     state.savingPacing = true;
     state.pacingGeneration += 1;
     // Stop immediately, including a pending wait, before saving a reported phone restriction.
-    if (!clear) state.operation?.controller.abort();
+    if (!clear) state.operation?.requestStop();
     refreshControls();
     try {
       const value = await rpc(clear ? 'pacingClear' : 'pacingBlock', { owner, ...(clear ? {} : { reason: 'rate-limit' }) });
@@ -662,7 +763,6 @@
   function clearSuggestions() {
     state.recommendations = [];
     state.selected.clear();
-    state.deselected.clear();
     renderSuggestions();
   }
 
@@ -705,18 +805,15 @@
       if (ui.localUpdated) ui.localUpdated.textContent = 'Último salvamento: ' + dateFormat.format(result.summary.updatedAt);
       if (ui.localStatus && state.pendingRun) report(ui.localStatus,
         `Fila salva: ${state.pendingRun.followed + state.pendingRun.requested} de ${state.pendingRun.target}. Você pode retomá-la.`);
-      if (restore && Array.isArray(result.database.candidates)) {
-        const followed = state.followedOnce;
-        state.recommendations = result.database.candidates.filter(candidate => !candidate.alreadyFollows &&
-          !followed.has(candidate.username) && candidate.suggestionProfiles?.length);
-        selectNextBatch();
-        renderSuggestions();
-      }
+      if (restore) await restoreSuggestions();
+      return result.database;
     } catch (error) {
       if (ui.localStatus) report(ui.localStatus, errorText(error), true);
+      return null;
+    } finally {
+      refreshControls();
+      renderQueue();
     }
-    refreshControls();
-    renderQueue();
   }
 
   async function exportLocalData(event) {
@@ -738,10 +835,12 @@
     }
   }
 
-  function selectNextBatch() {
-    const batch = state.recommendations.filter(({ username }) => !state.deselected.has(username))
-      .slice(0, flow().followBatchLimit);
-    state.selected = new Set(batch.map(({ username }) => username));
+  function selectSuggestionBatch(event) {
+    if (!event.isTrusted || state.operation) return;
+    const available = flow().followBatchLimit - state.selected.size;
+    const candidates = state.recommendations.filter(({ username }) => !state.selected.has(username)).slice(0, available);
+    for (const { username } of candidates) state.selected.add(username);
+    renderSuggestions();
   }
 
   async function refreshFollowQuota() {
@@ -765,6 +864,7 @@
   async function loadProfile(analyze) {
     await run(async () => {
       state.profile = null;
+      state.database = null;
       state.queueRun = null;
       state.queueExecuting = false;
       state.queueCandidates.clear(); state.queueResults.clear(); state.followHistory.clear();
@@ -776,10 +876,12 @@
       ui.pacingBlock.hidden = true;
       ui.profileResult.hidden = true;
       ui.niche.hidden = true;
+      ui.profileAnalysisStatus.textContent = '';
       ui.searchBlock.hidden = true;
       ui.discoveryLog.open = false;
       showDiscoveryLog('');
       report(ui.discoveryLogStatus, '');
+      suggestionsStatus('');
       clearSuggestions();
       const profile = await flow().readOwnProfile(tabId);
       const username = cleanUsername(profile.username);
@@ -797,11 +899,12 @@
         ui.automaticFollowSource.value = (await chrome.storage.local.get(sourceKey))[sourceKey] === 'suggestions' ? 'suggestions' : 'fallback';
       }
       ui.profileName.textContent = '@' + username;
-      ui.profilePrompt.textContent = 'Conta conectada. Configure as três referências para começar.';
+      ui.profilePrompt.textContent = 'Conta conectada.';
       await loadDiscoveryLog(username);
       await loadReferences(username);
       await refreshLocalData(true);
       await refreshPacing(true);
+      cleanerPanel?.requestReload();
       ui.profileResult.hidden = false;
       ui.searchBlock.hidden = false;
       void refreshFollowQuota();
@@ -811,7 +914,7 @@
         const result = await rpc('analyze', { profile });
         ui.niche.textContent = result.niche || 'Nicho não identificado';
         ui.niche.hidden = false;
-        ui.profilePrompt.textContent = providerUsed(result);
+        ui.profileAnalysisStatus.textContent = providerUsed(result);
       }
       showProgress('');
     }, { message: 'Lendo seu perfil do Instagram…', kind:analyze?'ai':'profile', showMeter: true });
@@ -840,14 +943,8 @@
       toggle.addEventListener('change', () => {
         if (toggle.checked) {
           if (state.selected.size >= flow().followBatchLimit) toggle.checked = false;
-          else {
-            state.selected.add(username);
-            state.deselected.delete(username);
-          }
-        } else {
-          state.selected.delete(username);
-          state.deselected.add(username);
-        }
+          else state.selected.add(username);
+        } else state.selected.delete(username);
         refreshControls();
       });
       row.append(content, toggle);
@@ -860,117 +957,149 @@
   }
 
   function onUpdate(update) {
-    if (typeof update?.message === 'string' && !state.operation?.controller.signal.aborted) {
+    if (typeof update?.message === 'string' && !state.operation?.signal.aborted) {
       showProgress(update.message);
     }
   }
 
-  async function discoverProfiles() {
-    let references;
-    try {
-      references = readReferences();
-    } catch (error) {
-      report(ui.referenceStatus, errorText(error), true);
-      return;
-    }
-    await run(async signal => {
-      const owner = cleanUsername(state.profile?.username);
-      const log = startOperationLog('Busca iniciada');
-      try {
-        await recommendProfiles(references, signal, log);
-        log('Busca concluída.');
-      } catch (error) {
-        log(signal.aborted || error?.name === 'AbortError' ? 'Busca interrompida.' : 'A busca terminou com erro.');
-        throw error;
-      } finally {
-        await saveDiscoveryLog(owner);
-      }
-    }, { message: 'Lendo seguidores dos perfis de referência…', kind:'discovery', stoppable: true, showMeter: true });
+  function suggestionsStatus(message, isError = false) {
+    if (ui.suggestionsStatus) report(ui.suggestionsStatus, message, isError);
   }
 
-  async function recommendProfiles(references, signal, log) {
-    log('Salvando perfis de referência.');
-    await persistReferences(references);
-    signal.throwIfAborted();
-    clearSuggestions();
-    const candidates = await flow().discover(tabId, references, {
-      signal,
-      suggestionsOnly: true,
-      onObserved: candidates => saveLocal('candidates', { candidates }),
-      owner: state.profile?.username,
-      onDiagnostic: log,
-      onUpdate({ reference, loaded, limit, source }) {
-        if (signal.aborted) return;
-        const index = references.indexOf(reference);
-        const completion = (index + loaded / limit) / references.length;
-        const label = source === 'suggestions' ? 'sugestões lidas' : 'seguidores lidos';
-        const progress = `Referência ${index + 1} de ${references.length} · @${reference} · ${loaded} de ${limit} ${label}`;
-        showProgress(progress, false, completion);
-      },
-    });
-    signal.throwIfAborted();
+  function suggestionScope(owner, references, followerFallback) {
+    return suggestionCheckPrefix + [owner, followerFallback ? 'fallback' : 'suggestions', ...[...references].sort()].join(':');
+  }
+
+  function cachedRecommendations(references, followerFallback) {
     const owner = cleanUsername(state.profile?.username);
-    await saveLocal('candidates', { candidates });
-    const recommendations = new Map();
-    const followers = new Map();
-    const seen = new Set();
-    let nativeCount = 0;
-    for (const candidate of candidates) {
-      const username = cleanUsername(candidate.username);
-      if (!username || username === owner || state.followedOnce.has(username) || candidate.alreadyFollows || references.includes(username) || seen.has(username)) continue;
-      const observed = rememberQueueCandidate(candidate);
-      const sourceProfiles = candidateReferences(candidate.sourceProfiles, references);
-      const suggestionProfiles = candidateReferences(candidate.suggestionProfiles, references);
-      if (suggestionProfiles.length) {
-        seen.add(username);
-        nativeCount += 1;
-        recommendations.set(username, { username, sourceProfiles, suggestionProfiles, avatarUrl: observed.avatarUrl });
-      } else if (sourceProfiles.length) {
-        seen.add(username);
-        followers.set(username, { username, label: candidate.label || '', sourceProfiles });
-      }
+    if (state.database?.owner !== owner) return [];
+    const followersSeen = new Set(state.database.snapshots?.followers?.usernames ?? []);
+    const unknown = new Set();
+    for (const run of state.database.runs) {
+      if (run.kind !== 'follow') continue;
+      for (const username of run.uncertain ?? []) unknown.add(username);
+      if (run.phase === 'dispatching' && run.current) unknown.add(run.current);
     }
-    log(`Candidatos elegíveis encontrados: ${seen.size}. Sugestões do Instagram: ${nativeCount}.`);
-    if (seen.size === 0) {
-      showProgress('Nenhum perfil elegível foi encontrado nas referências. Confira os perfis e tente outra busca.');
+    const suggestions = [], followers = [];
+    for (const candidate of state.database?.candidates ?? []) {
+      const username = cleanUsername(candidate.username);
+      if (!username || username === owner || references.includes(username) ||
+          candidate.alreadyFollows || followersSeen.has(username) || unknown.has(username) || state.followedOnce.has(username)) continue;
+      const suggestionProfiles = candidateReferences(candidate.suggestionProfiles, references);
+      const sourceProfiles = followerFallback ? candidateReferences(candidate.sourceProfiles, references) : [];
+      const entry = { ...candidate, username, suggestionProfiles, sourceProfiles };
+      if (suggestionProfiles.length) suggestions.push(entry);
+      else if (sourceProfiles.length) followers.push(entry);
+    }
+    return [...suggestions, ...followers];
+  }
+
+  function renderSavedSuggestions(references, followerFallback) {
+    state.recommendations = cachedRecommendations(references, followerFallback);
+    const eligible = new Set(state.recommendations.map(row => row.username));
+    state.selected = new Set([...state.selected].filter(username => eligible.has(username)));
+    renderSuggestions();
+    return state.recommendations.length;
+  }
+
+  async function showSavedSuggestions(references, open = false) {
+    const owner = cleanUsername(state.profile?.username);
+    const fallback = ui.automaticFollowSource?.value === 'fallback';
+    const count = renderSavedSuggestions(references, fallback);
+    const key = suggestionScope(owner, references, fallback);
+    const checkpoint = (await chrome.storage.local.get(key).catch(() => ({})))[key];
+    const current = suggestionScope(cleanUsername(state.profile?.username), ui.referenceInputs.map(input => referenceUsername(input.value)),
+      ui.automaticFollowSource?.value === 'fallback');
+    if (current !== key) return;
+    const saved = count ? `${count} perfis elegíveis salvos no painel.` : 'Nenhum perfil elegível salvo para estas referências.';
+    suggestionsStatus(checkpoint?.status === 'partial' || checkpoint?.status === 'collecting'
+      ? `A última coleta ficou incompleta. ${saved}`
+      : saved);
+    if (open && count) {
+      const disclosure = ui.recommendationSection.querySelector('details');
+      if (disclosure) disclosure.open = true;
+      ui.recommendationSection.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  async function restoreSuggestions() {
+    let references;
+    try {
+      references = readReferences(false);
+    } catch {
+      clearSuggestions();
+      suggestionsStatus('Configure três referências para consultar os perfis salvos.');
       return;
     }
-    let message = 'Sugestões do Instagram prontas para revisão.';
-    let rankingFailed = false;
-    if (followers.size) {
-      log('Análise dos seguidores enviada à IA.');
-      showProgress('A IA está analisando ' + followers.size + (followers.size === 1 ? ' candidato…' : ' candidatos…'), false, null);
-      let result;
+    await showSavedSuggestions(references);
+  }
+
+  async function viewSavedSuggestions() {
+    if (state.operation || state.savingReferences || !state.profile) return;
+    try {
+      const references = readReferences();
+      const saved = await refreshLocalData();
+      if (state.operation) return;
+      if (saved) await showSavedSuggestions(references, true);
+      else suggestionsStatus('Os perfis salvos não puderam ser lidos agora.', true);
+    } catch (error) { report(ui.referenceStatus, errorText(error), true); }
+  }
+
+  async function discoverProfiles() {
+    if (state.operation || state.savingReferences || !state.profile) return;
+    let references;
+    try { references = readReferences(); }
+    catch (error) { report(ui.referenceStatus, errorText(error), true); return; }
+    const owner = cleanUsername(state.profile.username);
+    const followerFallback = ui.automaticFollowSource?.value === 'fallback';
+    const key = suggestionScope(owner, references, followerFallback);
+    await run(async signal => {
+      const log = startOperationLog('Coleta para revisão iniciada');
+      const runId = state.operation.runId;
+      let completed = false;
       try {
-        result = await rpc('rank', { profile: state.profile, candidates: [...followers.values()] });
-      } catch (error) {
+        await persistReferences(references);
+        await chrome.storage.local.set({ [key]: { runId, status: 'collecting' } });
+        await saveLocal('event', { event: { action: 'discovery', status: 'started', reasonCode: 'reference-collection' } });
         signal.throwIfAborted();
-        if (!recommendations.size) throw error;
-        rankingFailed = true;
-        message += ' A análise dos seguidores falhou. ' + errorText(error);
-        log('A análise dos seguidores falhou. Sugestões do Instagram disponíveis.');
-      }
-      signal.throwIfAborted();
-      if (!rankingFailed) {
-        for (const entry of result?.recommendations ?? []) {
-          const username = cleanUsername(entry.username);
-          if (!followers.has(username) || recommendations.has(username)) continue;
-          recommendations.set(username, {
-            username,
-            reason: typeof entry.reason === 'string' ? entry.reason : '',
-            sourceProfiles: followers.get(username).sourceProfiles,
-            avatarUrl: avatarUrl(state.queueCandidates.get(username)?.avatarUrl),
-          });
+        const candidates = await flow().discover(tabId, references, {
+          signal, owner, suggestionsOnly: true, followerFallback,
+          onObserved: candidates => saveLocal('candidates', { candidates }),
+          onDiagnostic: log,
+          onUpdate({ reference, loaded, limit, source }) {
+            if (signal.aborted) return;
+            const index = references.indexOf(reference);
+            const label = source === 'suggestions' ? 'sugestões lidas' : 'seguidores lidos';
+            const progress = `Referência ${index + 1} de ${references.length} · @${reference} · ${loaded} de ${limit} ${label}`;
+            showProgress(progress, false, limit > 0 ? (index + Math.min(loaded / limit, 1)) / references.length : null);
+            updateSideProgress({ current: reference, processed: loaded, target: limit });
+            suggestionsStatus(progress);
+          },
+        });
+        await saveLocal('candidates', { candidates });
+        signal.throwIfAborted();
+        completed = true;
+        log(`Coleta concluída. Perfis retornados: ${candidates.length}.`);
+      } catch (error) {
+        log(signal.aborted || error?.name === 'AbortError' ? 'Coleta interrompida.' : 'A coleta terminou com erro.');
+        throw error;
+      } finally {
+        const checkpoint = (await chrome.storage.local.get(key).catch(() => ({})))[key];
+        if (checkpoint?.runId === runId) {
+          await chrome.storage.local.set({ [key]: { runId, status: completed ? 'complete' : 'partial' } })
+            .catch(() => log('Não foi possível atualizar o estado da coleta no painel.'));
         }
-        const rankedMessage = providerUsed(result);
-        message = nativeCount ? `${message} ${rankedMessage}`.trim() : rankedMessage;
+        await saveLocal('event', { event: { action: 'discovery', status: completed ? 'completed' : signal.aborted ? 'interrupted' : 'error', reasonCode: 'reference-collection' } })
+          .catch(() => log('Não foi possível salvar o evento de encerramento da coleta.'));
+        if (await refreshLocalData()) {
+          const count = renderSavedSuggestions(references, followerFallback);
+          const saved = count ? `${count} perfis elegíveis disponíveis no painel.` : 'Nenhum perfil elegível salvo para estas referências.';
+          suggestionsStatus(completed ? `Coleta concluída. ${saved}` : `Coleta incompleta. ${saved}`);
+          if (completed) showProgress(`Coleta concluída. ${saved}`, false, 1);
+        } else suggestionsStatus('Os perfis salvos não puderam ser lidos agora.', true);
+        await saveDiscoveryLog(owner);
       }
-    }
-    state.recommendations = [...recommendations.values()];
-    selectNextBatch();
-    renderSuggestions();
-    showProgress(recommendations.size ? message : 'Nenhum seguidor da amostra foi recomendado para este nicho.', rankingFailed, 1);
-    log(`Recomendações exibidas: ${state.recommendations.length}.`);
+    }, { message: 'Coletando perfis para revisão…', kind:'discovery', stoppable: true, showMeter: true });
   }
 
   function candidateReferences(values, references) {
@@ -1024,7 +1153,7 @@
       report(ui.referenceStatus, errorText(error), true);
       return;
     }
-    await run(async signal => {
+    await run(async (signal, checkpointDispatch) => {
       const log = startOperationLog('Modo automático iniciado', true);
       const durable = saved ? structuredClone(saved) : { id: state.operation.runId, kind: 'follow', target,
         processed: 0, followed: 0, requested: 0, skipped: 0, current: null, queue: [], completed: [],
@@ -1040,7 +1169,6 @@
       durable.decisions ??= 0;
       const completed = new Set(durable.completed);
       const uncertain = new Set(durable.uncertain ?? []);
-      const continuedUncertain = new Set(durable.continuedUncertain ?? []);
       const counts = { following: durable.followed, requested: durable.requested };
       let writes = Promise.resolve();
       let heartbeat;
@@ -1078,7 +1206,7 @@
         heartbeat = setInterval(() => {
           void persist().catch(error => {
             persistenceError = error;
-            state.operation?.controller.abort();
+            state.operation?.requestStop();
           });
         }, 10000);
         signal.throwIfAborted();
@@ -1117,21 +1245,22 @@
             await persist();
           },
           async onDispatch(username) {
-            durable.current = username;
-            durable.phase = 'dispatching';
-            durable.dispatchAt = Date.now();
-            state.queueMessage = 'Enviando ação para @' + username + '…';
-            await persist();
+            if (completed.has(username) || uncertain.has(username)) throw new Error('O perfil já foi conferido nesta fila.');
+            await checkpointDispatch(username, () => {
+              durable.current = username;
+              durable.phase = 'dispatching';
+              durable.dispatchAt = Date.now();
+              state.queueMessage = 'Enviando ação para @' + username + '…';
+              return persist();
+            });
           },
           async onUncertain(username) {
             uncertain.add(username);
-            continuedUncertain.add(username);
             durable.uncertain = [...uncertain];
-            durable.continuedUncertain = [...continuedUncertain];
             durable.uncertainAt = { ...durable.uncertainAt, [username]:durable.dispatchAt || Date.now() };
             durable.current = null;
             durable.phase = 'idle';
-            await saveLocal('event', {event:{action:'follow',username,status:'uncertain',reasonCode:'profile-skipped-unconfirmed'}});
+            await saveLocal('event', {event:{action:'follow',username,status:'uncertain',reasonCode:'confirmation-pending'}});
             await persist();
           },
           async onUpdate(update) {
@@ -1196,23 +1325,32 @@
     }, { message: 'Buscando sugestões do Instagram…', kind:'follow', runId:saved?.id, stoppable: true, showMeter: true });
   }
 
-  function removeCompletedSuggestions(completed, prepareNext = false) {
+  function removeCompletedSuggestions(completed) {
     if (!completed.size) return;
     state.recommendations = state.recommendations.filter(entry => !completed.has(entry.username));
     for (const username of completed.keys()) state.selected.delete(username);
-    if (prepareNext) selectNextBatch();
     renderSuggestions();
   }
 
   async function followSelected() {
-    const usernames = [...state.selected];
-    if (!usernames.length) return;
-    await run(async signal => {
-      const owner = state.profile?.username;
+    if (state.operation || !state.profile || !state.selected.size) return;
+    let references;
+    try { references = readReferences(); }
+    catch (error) { report(ui.referenceStatus, errorText(error), true); return; }
+    const followerFallback = ui.automaticFollowSource?.value === 'fallback';
+    const rows = cachedRecommendations(references, followerFallback).filter(row => state.selected.has(row.username));
+    if (rows.length !== state.selected.size) {
+      await showSavedSuggestions(references);
+      suggestionsStatus('A seleção mudou. Confira os perfis salvos antes de iniciar o lote.');
+      return;
+    }
+    const usernames = rows.map(row => row.username);
+    await run(async (signal, checkpointDispatch) => {
+      const owner = cleanUsername(state.profile.username);
       const log = startOperationLog('Lote iniciado', true);
       const completed = new Map();
       const durable = { id: state.operation.runId, kind: 'follow', mode: 'manual', status: 'running', phase: 'idle',
-        target: usernames.length, queue: [...usernames], current: null, completed: [], uncertain: [], references: [],
+        target: usernames.length, queue: [...usernames], current: null, completed: [], uncertain: [], references, followerFallback,
         followed: 0, requested: 0, processed: 0, skipped: 0, startedAt: Date.now() };
       state.queueRun = durable; state.queueExecuting = true; state.queueResults.clear(); state.queueNextAt = null;
       state.queueMessage = 'Preparando o lote selecionado…';
@@ -1224,18 +1362,26 @@
         writes = writes.then(() => saveLocal('run', { run: snapshot }));
         return writes;
       };
-      const saveProgress = () => void persist().catch(error => { persistenceError = error; state.operation?.controller.abort(); });
+      const saveProgress = () => void persist().catch(error => { persistenceError = error; state.operation?.requestStop(); });
       const rememberResult = result => {
         const username = cleanUsername(result?.username);
-        if (usernames.includes(username) && ['following', 'requested', 'already', 'remembered'].includes(result.status)) {
+        if (usernames.includes(username) && ['following', 'requested', 'skipped', 'remembered'].includes(result.status)) {
           completed.set(username, result.status);
           durable.completed = [...completed.keys()];
           durable.followed = [...completed.values()].filter(status => status === 'following').length;
           durable.requested = [...completed.values()].filter(status => status === 'requested').length;
           durable.processed = completed.size;
           durable.skipped = completed.size - durable.followed - durable.requested;
-          durable.current = null; durable.phase = 'idle';
+          if (durable.current === username) {
+            durable.current = null; durable.phase = 'idle'; durable.dispatchAt = 0;
+          }
         }
+      };
+      const rememberUncertain = async username => {
+        if (durable.current !== username || durable.phase !== 'dispatching' || durable.uncertain.includes(username)) return;
+        durable.uncertain = [username];
+        durable.status = 'paused';
+        await persist();
       };
       let outcome = 'Lote incompleto.';
       let finished = false;
@@ -1243,14 +1389,30 @@
       try {
         await persist();
         heartbeat = setInterval(saveProgress, 10000);
-        const results = await flow().follow(tabId, usernames, {
+        const results = await flow().followSelectedFromLists(tabId, references, rows, {
           signal,
           owner,
           onDiagnostic: log,
+          async onCandidate(candidate) {
+            const username = cleanUsername(candidate?.username);
+            if (!usernames.includes(username)) return;
+            durable.current = username;
+            durable.phase = 'waiting';
+            rememberQueueCandidate(candidate);
+            await persist();
+          },
+          async onDispatch(username) {
+            if (!usernames.includes(username) || completed.has(username)) throw new Error('O perfil não está na seleção atual.');
+            await checkpointDispatch(username, () => {
+              durable.current = username;
+              durable.phase = 'dispatching';
+              durable.dispatchAt = Date.now();
+              state.queueMessage = `Seguindo pela lista de origem · @${username}`;
+              return persist();
+            });
+          },
+          onUncertain: rememberUncertain,
           async onUpdate(result) {
-            const name = cleanUsername(result?.username);
-            if (name && !result.status) { durable.current = name; durable.phase = result.phase ?? 'waiting'; }
-            if (result.phase === 'dispatching') durable.dispatchAt = Date.now();
             rememberResult(result);
             queueUpdate(result, durable);
             await persist();
@@ -1267,13 +1429,20 @@
         const statuses = [...completed.values()];
         const following = statuses.filter(status => status === 'following').length;
         const requested = statuses.filter(status => status === 'requested').length;
-        showProgress(following + ' perfis seguidos e ' + requested + ' solicitações enviadas.');
+        const remaining = usernames.length - completed.size;
+        const result = `${following} perfis seguidos · ${requested} solicitações · ${durable.skipped} perfis pulados`;
+        showProgress(`${result}${remaining ? ` · ${remaining} pendentes` : ''}.`);
       } catch (error) {
         if (error?.clickSent) outcome = 'O lote terminou com um clique sem confirmação.';
         else outcome = signal.aborted || error?.name === 'AbortError' ? 'Lote interrompido.' : 'O lote terminou com erro.';
-        durable.status = platformRestricted(error) || (signal.aborted && !error?.clickSent) ? 'paused' : 'error';
-        if (error?.clickSent && durable.current) durable.uncertain = [durable.current];
-        else { durable.current = null; durable.phase = 'idle'; }
+        if (error?.clickSent && durable.current) {
+          try { await rememberUncertain(durable.current); }
+          catch { log('Não foi possível registrar a pendência. O estado anterior ao clique foi preservado.'); }
+        }
+        if (!durable.uncertain.length) {
+          durable.current = null; durable.phase = 'idle'; durable.dispatchAt = 0;
+        }
+        durable.status = durable.uncertain.length || platformRestricted(error) || signal.aborted ? 'paused' : 'error';
         state.queueMessage = outcome;
         throw error;
       } finally {
@@ -1283,12 +1452,12 @@
         try { await writes; await persist(); }
         catch { report(ui.localStatus, 'Não consegui salvar a atualização visual da fila. O histórico confirmado foi preservado.', true); }
         log(`${outcome} Perfis conferidos no lote: ${completed.size} de ${usernames.length}.`);
-        removeCompletedSuggestions(completed, finished);
-        await saveDiscoveryLog(cleanUsername(owner));
+        removeCompletedSuggestions(new Set([...completed.keys(), ...durable.uncertain]));
+        await saveDiscoveryLog(owner);
         await refreshHistory();
         await refreshLocalData();
       }
-    }, { message: 'Iniciando a sequência no Instagram…', kind:'follow', stoppable: true });
+    }, { message: 'Preparando a sequência pelas listas de referência…', kind:'follow', stoppable: true });
   }
 
   function historyLabel(entry) {
@@ -1301,20 +1470,137 @@
     return status + date;
   }
 
-  function renderHistory(entries) {
-    const rows = [];
-    for (const entry of entries) {
-      const username = cleanUsername(entry.username);
-      if (!username) continue;
-      const row = make('li');
-      const content = make('div', { className: 'row-contents' });
-      content.append(profileLink(username), make('p', { textContent: historyLabel(entry) }));
-      row.append(content);
-      rows.push(row);
-    }
-    ui.history.replaceChildren(...rows);
-    report(ui.historyStatus, rows.length ? '' : 'Nenhuma conta registrada neste fluxo.');
+  const historyView = { owner: null, entries: [], rows: new Map(), frame: 0 };
+  const historyOverscan = 5;
+  const historyObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleHistoryWindow) : null;
+
+  function historyIndex(element) {
+    const row = element?.closest('.history-row');
+    return row?.parentElement === ui.history ? Number(row.dataset.index) : -1;
   }
+
+  function historyRow(index) {
+    const { entry, username } = historyView.entries[index];
+    const row = make('li', { className: 'history-row' });
+    row.dataset.index = String(index);
+    row.setAttribute('aria-posinset', String(index + 1));
+    row.setAttribute('aria-setsize', String(historyView.entries.length));
+    const link = profileLink(username);
+    const content = make('div', { className: 'row-contents' });
+    content.append(link, make('p', { textContent: historyLabel(entry) }));
+    row.append(content);
+    return { row, link };
+  }
+
+  function paintHistoryWindow() {
+    const total = historyView.entries.length;
+    if (!ui.historyDisclosure?.open || !total) return;
+    const rowHeight = ui.historyMeasure.getBoundingClientRect().height;
+    if (!rowHeight) return;
+    ui.history.style.blockSize = `${total * rowHeight}px`;
+    const { scrollTop, clientHeight } = ui.historyViewport;
+    const first = Math.min(total - 1, Math.floor(scrollTop / rowHeight));
+    const start = Math.max(0, first - historyOverscan);
+    const end = Math.min(total, Math.ceil((scrollTop + clientHeight) / rowHeight) + historyOverscan);
+    const focused = historyIndex(document.activeElement);
+    const wanted = Array.from({ length: end - start }, (_, offset) => start + offset);
+    // Keep the focused link mounted while the user scrolls with the pointer.
+    if (focused >= 0 && focused < start) wanted.unshift(focused);
+    if (focused >= end && focused < total) wanted.push(focused);
+    const wantedIndices = new Set(wanted);
+    for (const [index, { row }] of historyView.rows) {
+      if (wantedIndices.has(index)) continue;
+      row.remove();
+      historyView.rows.delete(index);
+    }
+    let next = ui.history.firstElementChild;
+    for (const index of wanted) {
+      const current = historyView.rows.get(index) ?? historyRow(index);
+      historyView.rows.set(index, current);
+      current.row.style.setProperty('--history-row-offset', `${index * rowHeight}px`);
+      current.link.tabIndex = index === (focused >= 0 ? focused : first) ? 0 : -1;
+      if (current.row === next) next = next.nextElementSibling;
+      else ui.history.insertBefore(current.row, next);
+    }
+  }
+
+  function scheduleHistoryWindow() {
+    if (!ui.historyDisclosure?.open || historyView.frame) return;
+    historyView.frame = requestAnimationFrame(() => {
+      historyView.frame = 0;
+      paintHistoryWindow();
+    });
+  }
+
+  function resetHistoryRows() {
+    if (historyView.frame) cancelAnimationFrame(historyView.frame);
+    historyView.frame = 0;
+    historyView.rows.clear();
+    ui.history.replaceChildren();
+  }
+
+  function focusHistoryRow(index) {
+    const rowHeight = ui.historyMeasure.getBoundingClientRect().height;
+    const viewport = ui.historyViewport;
+    if (!rowHeight) return;
+    const top = index * rowHeight;
+    if (top < viewport.scrollTop) viewport.scrollTop = top;
+    else if (top + rowHeight > viewport.scrollTop + viewport.clientHeight) {
+      viewport.scrollTop = top + rowHeight - viewport.clientHeight;
+    }
+    paintHistoryWindow();
+    historyView.rows.get(index)?.link.focus({ preventScroll: true });
+    paintHistoryWindow();
+  }
+
+  function renderHistory(entries) {
+    const owner = state.profile?.username ?? null;
+    const sameOwner = owner === historyView.owner;
+    const focused = sameOwner ? historyView.entries[historyIndex(document.activeElement)] : null;
+    historyView.owner = owner;
+    historyView.entries = entries.flatMap(entry => {
+      const username = cleanUsername(entry?.username);
+      return username ? [{ entry, username }] : [];
+    });
+    resetHistoryRows();
+    if (!sameOwner) ui.historyViewport.scrollTop = 0;
+    const total = historyView.entries.length;
+    ui.historyViewport.hidden = ui.historyCount.hidden = ui.historyKeys.hidden = !total;
+    ui.historyCount.textContent = total === 1 ? '1 registro' : `${total.toLocaleString('pt-BR')} registros`;
+    report(ui.historyStatus, total ? '' : 'Nenhuma conta registrada neste fluxo.');
+    paintHistoryWindow();
+    if (focused) {
+      const index = historyView.entries.findIndex(row => row.username === focused.username && row.entry.owner === focused.entry.owner);
+      if (index >= 0) focusHistoryRow(index);
+    }
+  }
+
+  ui.historyDisclosure.addEventListener('toggle', () => {
+    if (ui.historyDisclosure.open) {
+      historyObserver?.observe(ui.historyViewport);
+      historyObserver?.observe(ui.historyMeasure);
+      scheduleHistoryWindow();
+    } else {
+      historyObserver?.disconnect();
+      resetHistoryRows();
+    }
+  });
+  ui.historyViewport.addEventListener('scroll', scheduleHistoryWindow, { passive: true });
+  ui.historyViewport.addEventListener('focusout', scheduleHistoryWindow);
+  ui.historyViewport.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !historyView.entries.length) return;
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) return;
+    const rowHeight = ui.historyMeasure.getBoundingClientRect().height;
+    if (!rowHeight) return;
+    const current = historyIndex(event.target);
+    const position = current < 0 ? Math.floor(ui.historyViewport.scrollTop / rowHeight) : current;
+    const page = Math.max(1, Math.floor(ui.historyViewport.clientHeight / rowHeight) - 1);
+    const last = historyView.entries.length - 1;
+    const target = { ArrowUp: position - 1, ArrowDown: position + (current < 0 ? 0 : 1),
+      Home: 0, End: last, PageUp: position - page, PageDown: position + page }[event.key];
+    event.preventDefault();
+    focusHistoryRow(Math.min(last, Math.max(0, target)));
+  });
 
   async function refreshHistory() {
     const generation = ++state.historyGeneration;
@@ -1333,13 +1619,18 @@
     if (!Number.isSafeInteger(progress?.unfollowed) || !Number.isSafeInteger(progress?.total)) return '';
     const deferred = Array.isArray(progress.deferred) ? progress.deferred.length : progress.deferred;
     return `Perfis removidos: ${progress.unfollowed} de ${progress.total}.` +
+      (progress.protectedCount > 0 ? ` Protegidos: ${progress.protectedCount}.` : '') +
       (Number.isSafeInteger(deferred) && deferred > 0 ? ` Pendentes para nova conferência: ${deferred}.` : '');
   }
 
   async function unfollowAll(event) {
     const owner = cleanUsername(state.profile?.username);
     if (!event.isTrusted || !owner || state.savingReferences) return;
-    await run(async signal => {
+    if (cleanerPanel?.hasPendingProtection()) {
+      showProgress('A lista branca tem alterações pendentes. Salve a proteção no Limpa Perfil antes de iniciar a remoção.', true);
+      return;
+    }
+    await run(async (signal, checkpointDispatch) => {
       const engine = globalThis.instagramFlowUnfollowAll;
       if (!engine?.run) throw new Error('Não consegui iniciar a remoção. Reabra o painel da extensão.');
       const log = startOperationLog('Remoção de todos os perfis iniciada', true);
@@ -1351,7 +1642,11 @@
         target: 0, processed: 0, skipped: 0, queue: [], completed: [], current: null, phase: 'idle' };
       const summaryOf = value => unfollowAllSummary({ ...value, deferred: value?.deferred ?? deferred.size });
       const persist = async task => {
-        try { return await task(); }
+        try {
+          const saved = await task();
+          updateSideProgress({ ...durable, uncertain: [...skipped, ...deferred.keys()] });
+          return saved;
+        }
         catch (cause) {
           const error = new Error(errorText(cause), { cause });
           error.code = 'unfollow-checkpoint-storage-failed';
@@ -1392,17 +1687,22 @@
               log('@' + update.username + ' continua em Seguindo após a conferência. Perfil adiado; a lista continuará.');
             } else if (update.status === 'skipped') {
               skipped.add(update.username);
-              await persist(() => saveLocal('event', { event: { action:'unfollow', username:update.username, status:'skipped', reasonCode:'not-currently-following' } }));
+              const protectedProfile = update.reason === 'protected';
+              await persist(() => saveLocal('event', { event: { action:'unfollow', username:update.username, status:'skipped',
+                reasonCode:protectedProfile ? 'protected' : 'not-currently-following' } }));
               durable.current = null;
               durable.phase = 'idle';
-              log('@' + update.username + ' não estava mais em Seguindo; nenhuma nova ação foi enviada.');
+              log(protectedProfile ? `@${update.username} preservado pela lista branca.`
+                : `@${update.username} não estava mais em Seguindo. Nenhuma nova ação foi enviada.`);
             } else {
               durable.current = update.username;
               durable.phase = update.status === 'waiting' ? 'waiting' : 'dispatching';
               if (durable.phase === 'dispatching') durable.dispatchAt = Date.now();
             }
             durable.skipped = new Set([...skipped, ...deferred.keys()]).size;
-            await persist(() => saveLocal('run', { run: durable }));
+            const save = () => persist(() => saveLocal('run', { run: durable }));
+            if (update.status === 'started') await checkpointDispatch(update.username, save);
+            else await save();
           },
           onUpdate(update) {
             if (Number.isSafeInteger(update?.total)) progress = { ...progress, ...update };
@@ -1418,7 +1718,7 @@
         });
         progress = { ...progress, ...result };
         if (signal.aborted) throw Object.assign(new Error('Remoção interrompida.'), { name:'AbortError', progress });
-        if (result.error || result.completed !== true || result.remaining !== 0) {
+        if (result.error || result.completed !== true || result.remaining !== (result.protectedCount ?? 0)) {
           throw Object.assign(new Error(result.message || 'A remoção terminou com perfis pendentes.'), {
             code:result.code || 'unfollow-pending', reason:result.reason || result.code || 'unfollow-pending',
             phase:result.phase || 'reconciling', progress, workflowStatus:'paused' });
@@ -1453,6 +1753,17 @@
     }, { message: 'Abrindo Seguindo para iniciar a remoção…', kind:'unfollow', stoppable: true, showMeter: true });
   }
 
+  cleanerPanel = globalThis.instagramFluxoCleanerPanel?.create({
+    getOwner: () => cleanUsername(state.profile?.username),
+    getBusy: () => Boolean(state.operation || state.savingPacing || state.savingReferences),
+    getBlocked: () => Boolean(state.pacing?.block),
+    tabId, run, rpc, showProgress, report, make, profileLink, cleanUsername, errorText, refreshHistory, refreshLocalData, updateSideProgress,
+  });
+  backupPanel = globalThis.instagramFluxoBackupPanel?.create({
+    getOwner: () => cleanUsername(state.profile?.username),
+    isBusy: () => Boolean(state.operation || state.savingPacing || state.savingReferences),
+    onApplied: () => Promise.all([refreshLocalData(true), refreshHistory(), refreshPacing(), cleanerPanel?.reload()]),
+  });
   ui.configForm.addEventListener('submit', saveConfiguration);
   ui.vaultForm.addEventListener('submit', openVault);
   ui.lockVault.addEventListener('click', lockVault);
@@ -1462,7 +1773,9 @@
   });
   ui.loadProfile.addEventListener('click', () => loadProfile(false));
   ui.analyze.addEventListener('click', () => loadProfile(true));
-  ui.discover.addEventListener('click', discoverProfiles);
+  ui.discover.addEventListener('click', viewSavedSuggestions);
+  ui.refreshSuggestions?.addEventListener('click', discoverProfiles);
+  ui.selectSuggestionBatch?.addEventListener('click', selectSuggestionBatch);
   ui.automaticFollowForm.addEventListener('submit', startAutomaticFollow);
   ui.copyDiscoveryLog.addEventListener('click', copyDiscoveryLog);
   ui.saveReferences.addEventListener('click', saveReferences);
@@ -1472,12 +1785,11 @@
   ui.follow.addEventListener('click', event => {
     if (event.isTrusted) void followSelected();
   });
-  ui.stop.addEventListener('click', () => {
-    if (state.operation?.stoppable) {
-      state.operation.controller.abort();
-      showProgress('Interrompendo…');
-      refreshControls();
-    }
+  ui.stop.addEventListener('click', () => stopOperation(state.operation?.stopToken));
+  if (ui.openSidePanel) ui.openSidePanel.hidden = !sideLink;
+  ui.openSidePanel?.addEventListener('click', event => {
+    if (!event.isTrusted || !sideLink) return;
+    void sideLink.open().then(() => report(ui.sidePanelError, ''), error => report(ui.sidePanelError, errorText(error), true));
   });
   ui.refreshHistory.addEventListener('click', refreshHistory);
   ui.unfollowAll.addEventListener('click', unfollowAll);
@@ -1497,6 +1809,7 @@
     if (!owner || state.operation) return;
     try { await chrome.storage.local.set({ ['instagramFluxoFollowSourceV2:' + owner]: ui.automaticFollowSource.value === 'fallback' ? 'fallback' : 'suggestions' }); }
     catch { if (ui.localStatus) report(ui.localStatus, 'Não foi possível salvar a origem dos perfis.', true); }
+    await restoreSuggestions();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
@@ -1504,6 +1817,7 @@
       void refreshSettings();
       void refreshFollowQuota();
       if (!state.operation) { void refreshLocalData(); void refreshPacing(); }
+      if (!state.operation) void cleanerPanel?.reload();
     }
   });
 

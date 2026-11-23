@@ -7,6 +7,7 @@
   const suggestionsPerReference = 60;
   const automaticSuggestionsPerReference = 200;
   const pollMs = 350;
+  const quietReadMs = 2500;
   const timeoutMs = 45000;
   const hiddenTimeoutMs = 300000;
   const scrollIntervalMs = 1300;
@@ -319,6 +320,130 @@
     });
   }
 
+  // Runs in the same isolated frame as inspectPage and observes UI changes only.
+  function observeReference(command, reference, token, since, waitMs) {
+    const current = globalThis.instagramFluxoReferenceObserver;
+    const matchesReference = () => location.origin === 'https://www.instagram.com' &&
+      [reference, reference + '/followers'].includes(location.pathname.replace(/^\/|\/$/g, '').toLowerCase());
+    if (command === 'stop' || !matchesReference()) {
+      if (current?.token === token) current.close();
+      return null;
+    }
+    if (command === 'wait') return current?.token === token ? current.wait(since, waitMs) : null;
+    if (typeof MutationObserver !== 'function' || !document.documentElement) return null;
+
+    current?.close();
+    const modals = '[role="dialog"], [role="alertdialog"], dialog';
+    const alerts = '[role="alert"], [aria-live="assertive"]';
+    let revision = 0;
+    let pending;
+    let lease;
+    const watcher = { token, wait: waitForChange, close };
+    const observer = new MutationObserver(records => {
+      if (!matchesReference()) return close();
+      const scopes = modals + ', ' + alerts + (document.querySelector(modals) ? '' : ', main, [role="main"]');
+      if (records.some(record => {
+        const node = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+        if (node?.closest(scopes)) return true;
+        return [...record.addedNodes, ...record.removedNodes].some(child =>
+          child.nodeType === 1 && (child.matches(scopes) || child.querySelector(scopes)));
+      })) changed();
+    });
+
+    function changed() {
+      if (!matchesReference()) return close();
+      revision += 1;
+      pending?.(revision);
+    }
+    function extendLease() {
+      clearTimeout(lease);
+      lease = setTimeout(close, 120000);
+    }
+    function waitForChange(lastRevision, milliseconds) {
+      extendLease();
+      if (revision !== lastRevision) return revision;
+      pending?.(revision);
+      return new Promise(resolve => {
+        const timer = setTimeout(() => pending?.(revision), milliseconds);
+        pending = value => {
+          clearTimeout(timer);
+          pending = undefined;
+          resolve(value);
+        };
+      });
+    }
+    function close() {
+      observer.disconnect();
+      clearTimeout(lease);
+      pending?.(null);
+      document.removeEventListener('scroll', changed, true);
+      document.removeEventListener('visibilitychange', changed);
+      globalThis.removeEventListener('resize', changed);
+      globalThis.removeEventListener('popstate', changed);
+      globalThis.removeEventListener('pagehide', close);
+      if (globalThis.instagramFluxoReferenceObserver === watcher) delete globalThis.instagramFluxoReferenceObserver;
+    }
+
+    observer.observe(document.documentElement, {
+      subtree: true, childList: true, characterData: true, attributes: true,
+      attributeFilter: ['aria-busy', 'aria-disabled', 'aria-hidden', 'aria-label', 'aria-live',
+        'class', 'disabled', 'hidden', 'href', 'open', 'role', 'src', 'srcset', 'style'],
+    });
+    document.addEventListener('scroll', changed, true);
+    document.addEventListener('visibilitychange', changed);
+    globalThis.addEventListener('resize', changed);
+    globalThis.addEventListener('popstate', changed);
+    globalThis.addEventListener('pagehide', close, { once: true });
+    extendLease();
+    globalThis.instagramFluxoReferenceObserver = watcher;
+    return revision;
+  }
+
+  async function referenceObserver(tabId, reference, signal) {
+    const token = crypto.randomUUID();
+    let documentId;
+    let revision = null;
+    let closing;
+    async function command(name, ms = 0) {
+      const [frame] = await chrome.scripting.executeScript({
+        target: documentId ? { tabId, documentIds: [documentId] } : { tabId },
+        func: observeReference, args: [name, reference, token, revision, ms],
+      });
+      documentId ??= frame?.documentId;
+      return await frame?.result;
+    }
+    function close() {
+      signal?.removeEventListener('abort', close);
+      closing ??= command('stop').catch(() => {});
+      return closing;
+    }
+    revision = await command('start').catch(() => null);
+    signal?.addEventListener('abort', close, { once: true });
+    if (signal?.aborted) await close();
+    return {
+      close,
+      async changeOrDeadline(abortSignal, ...deadlines) {
+        const now = performance.now();
+        const ms = Math.max(0, Math.min(quietReadMs, Math.min(...deadlines) - now));
+        abortSignal?.throwIfAborted();
+        if (closing || !Number.isInteger(revision)) return wait(abortSignal, Math.min(ms, pollMs));
+        // An inactive browser tab may delay timers in the page. Keep a bound in
+        // the extension too, then let the existing DOM read verify current state.
+        let timer;
+        try {
+          revision = await Promise.race([
+            command('wait', ms).catch(() => null),
+            new Promise(resolve => { timer = setTimeout(() => resolve(null), ms + pollMs); }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
+        if (revision === null) void close();
+        await wait(abortSignal, Math.max(0, Math.min(pollMs, ms) - (performance.now() - now)));
+      },
+    };
+  }
+
   async function runInTab(tabId, action, owner = null, reference, target = null, clickBy = null, token = null) {
     let results;
     try {
@@ -389,7 +514,7 @@
     throw new Error('Não consegui confirmar seu próprio perfil. Atualize a aba e tente novamente.');
   }
 
-  async function clickSuggestion(tabId, owner, reference, target, clickBy, signal, fromFollowers = false) {
+  async function clickSuggestion(tabId, owner, reference, target, clickBy, signal, watcher, fromFollowers = false) {
     signal?.throwIfAborted();
     const token = crypto.randomUUID();
     const source = fromFollowers ? 'follower' : 'suggestion';
@@ -397,11 +522,11 @@
       const sent = await runInTab(tabId, 'follow-' + source, owner, reference, target, clickBy, token);
       if (sent === 'skipped' || sent === null) return 'skipped';
       if (sent !== 'sent') throw new Error('Não foi possível verificar se o clique foi enviado.');
-      const started = performance.now();
-      while (performance.now() - started < 12000) {
+      const deadline = performance.now() + 12000;
+      while (performance.now() < deadline) {
         const result = await runInTab(tabId, 'confirm-' + source, owner, reference, target, null, token);
         if (result === 'following' || result === 'requested') return result;
-        await wait();
+        await watcher.changeOrDeadline(undefined, deadline);
       }
       const final = await runInTab(tabId, 'confirm-' + source, owner, reference, target, null, token);
       if (final === 'following' || final === 'requested') return final;
@@ -418,17 +543,29 @@
     }
   }
 
-  async function sample(tabId, owner, reference, { signal, onUpdate, log, excluded, suggestionsOnly, followerFallback, onSuggestion, chooseSuggestions, onObserved }) {
-    const suggestionLimit = suggestionsOnly ? automaticSuggestionsPerReference : suggestionsPerReference;
-    const followerLimit = suggestionsOnly ? automaticSuggestionsPerReference : samplePerReference;
+  async function sample(tabId, owner, reference, options) {
+    const { signal, log } = options;
     log('Abrindo perfil.');
     await navigate(tabId, reference, signal);
+    const watcher = await referenceObserver(tabId, reference, signal);
+    try {
+      return await readReference(tabId, owner, reference, watcher, options);
+    } finally {
+      await watcher.close();
+    }
+  }
+
+  async function readReference(tabId, owner, reference, watcher, { signal, onUpdate, log, excluded, suggestionsOnly, followerFallback, onSuggestion, chooseSuggestions, onObserved, selectedTargets }) {
+    const suggestionLimit = selectedTargets?.size ?? (suggestionsOnly ? automaticSuggestionsPerReference : suggestionsPerReference);
+    const followerLimit = suggestionsOnly ? automaticSuggestionsPerReference : samplePerReference;
+    const needsFollowerRows = selectedTargets && [...selectedTargets.values()].some(target => target.follower);
     log('Perfil aberto. Procurando o botão Seguidores.');
     const openAt = performance.now();
     let opened;
     while (!opened && performance.now() - openAt < timeoutMs) {
+      signal?.throwIfAborted();
       opened = await runInTab(tabId, 'open', owner, reference);
-      if (!opened) await wait(signal);
+      if (!opened) await watcher.changeOrDeadline(signal, openAt + timeoutMs);
     }
     if (!opened || opened.unavailable) {
       const message = 'Não consegui abrir os seguidores de @' + reference + '. Confira se o perfil está acessível para sua conta.';
@@ -462,12 +599,15 @@
     let lastRetry = performance.now();
     async function finishSuggestions(stopped = false) {
       await runInTab(tabId, 'close', owner, reference);
-      if (!suggestions.size) {
+      if (selectedTargets) {
+        log(`A lista exibiu ${suggestions.size} de ${selectedTargets.size} perfis selecionados nesta referência.`);
+      } else if (!suggestions.size) {
         log(suggestionsOnly ? 'Nenhuma sugestão foi encontrada nesta referência.' : 'O Instagram mostrou a lista vazia. Referência pulada.');
         return { candidates: [], stopped };
+      } else {
+        log(suggestionsOnly ? `O Instagram exibiu ${suggestions.size} perfis elegíveis na origem selecionada.` :
+          `O Instagram mostrou a lista vazia e ${suggestions.size} sugestões disponíveis.`);
       }
-      log(suggestionsOnly ? `O Instagram exibiu ${suggestions.size} perfis elegíveis na origem selecionada.` :
-        `O Instagram mostrou a lista vazia e ${suggestions.size} sugestões disponíveis.`);
       return { candidates: [...suggestions.values()], stopped };
     }
     while (true) {
@@ -480,7 +620,7 @@
           return [];
         }
         if (performance.now() - lastProgress >= (document.hidden ? hiddenTimeoutMs : timeoutMs)) break;
-        await wait(signal);
+        await watcher.changeOrDeadline(signal, lastProgress + (opened.zeroCount ? settleMs : document.hidden ? hiddenTimeoutMs : timeoutMs));
         continue;
       }
       if (!sawDialog) log('Janela Seguidores reconhecida.');
@@ -516,17 +656,17 @@
         retries = 0;
         if (!suggestionsOnly) {
           lastProgress = performance.now();
-          onUpdate({ message: '@' + reference + ': ' + found.size + ' seguidores lidos.', reference, loaded: found.size, limit: samplePerReference });
+          await onUpdate({ message: '@' + reference + ': ' + found.size + ' seguidores lidos.', reference, loaded: found.size, limit: samplePerReference });
         }
       }
-      if (suggestionsOnly && !sawSuggestions && !fromFollowers &&
+      if (suggestionsOnly && !needsFollowerRows && !sawSuggestions && !fromFollowers &&
           (performance.now() - probeStartedAt >= suggestionProbeMs || probeScrolls >= suggestionProbeScrolls ||
             found.size >= automaticSuggestionsPerReference || (!view.loading && view.atBottom && performance.now() - probeStartedAt >= settleMs))) {
-        if (followerFallback === true && !view.loading && view.matches.length) {
+        if (!selectedTargets && followerFallback === true && !view.loading && view.matches.length) {
           fromFollowers = true;
           lastProgress = performance.now();
           log('Sugestões não apareceram na busca curta. Usando seguidores da referência, conforme a opção selecionada.');
-          onUpdate({ message: '@' + reference + ': usando seguidores da referência como alternativa.', reference, source: 'reference-followers' });
+          await onUpdate({ message: '@' + reference + ': usando seguidores da referência como alternativa.', reference, source: 'reference-followers' });
         } else {
           log('Sugestões não apareceram na busca curta. Continuando pela próxima referência.');
           return finishSuggestions();
@@ -543,9 +683,11 @@
           settledAt = view.atBottom ? (settledAt ?? now) : undefined;
           if (now - emptySince >= settleMs) {
             const previousSuggestions = suggestions.size;
-            const offered = fromFollowers ? view.matches.filter(candidate => candidate.followable) : view.suggestions;
+            const useFollowers = selectedTargets ? !view.suggestionsShown : fromFollowers;
+            const offered = useFollowers ? view.matches.filter(candidate => candidate.followable) : view.suggestions;
             const fresh = offered.filter(candidate => !excluded.has(candidate.username) && !suggestions.has(candidate.username))
-              .slice(0, suggestionLimit - suggestions.size).map(candidate => ({ ...candidate, suggested: !fromFollowers }));
+              .filter(candidate => !selectedTargets || selectedTargets.get(candidate.username)?.[useFollowers ? 'follower' : 'suggestion'])
+              .slice(0, suggestionLimit - suggestions.size).map(candidate => ({ ...candidate, suggested: !useFollowers }));
             if (fresh.some(candidate => !candidate.alreadyFollows)) idleScrolls = 0;
             if (fresh.length && onObserved) await onObserved(fresh.map(metadata));
             let chosen;
@@ -567,7 +709,7 @@
                 if (onSuggestion && !candidate.alreadyFollows && (!chosen || chosen.has(candidate.username))) {
                   signal?.throwIfAborted();
                   const proceed = await onSuggestion(candidate.username, clickBy =>
-                    clickSuggestion(tabId, owner, reference, candidate.username, clickBy, signal, candidate.suggested === false),
+                    clickSuggestion(tabId, owner, reference, candidate.username, clickBy, signal, watcher, candidate.suggested === false),
                   metadata(candidate));
                   if (proceed === false) return finishSuggestions(true);
                   lastProgress = performance.now();
@@ -577,9 +719,9 @@
             if (suggestions.size !== previousSuggestions) {
               if (fresh.some(candidate => !candidate.alreadyFollows)) lastProgress = performance.now();
               if (view.atBottom) settledAt = lastProgress;
-              onUpdate({
+              await onUpdate({
                 message: '@' + reference + ': ' + suggestions.size + ' perfis observados.',
-                reference, loaded: suggestions.size, limit: suggestionLimit, source: fromFollowers ? 'reference-followers' : 'suggestions',
+                reference, loaded: suggestions.size, limit: suggestionLimit, source: useFollowers ? 'reference-followers' : 'suggestions',
               });
             }
             if (idleScrolls >= 8) {
@@ -591,7 +733,7 @@
               idleScrolls += 1;
               if (!sawSuggestions && !fromFollowers) probeScrolls += 1;
               nextScrollAt = performance.now() + scrollIntervalMs;
-              await wait(signal);
+              await watcher.changeOrDeadline(signal, nextScrollAt);
               continue;
             }
             if (suggestions.size >= suggestionLimit || (settledAt !== undefined && now - settledAt >= settleMs)) {
@@ -609,7 +751,15 @@
           if (suggestions.size) return finishSuggestions();
           break;
         }
-        await wait(signal);
+        const deadlines = [lastProgress + (background ? hiddenTimeoutMs : timeoutMs)];
+        if (!view.loading && emptySince !== undefined) {
+          if (now - emptySince < settleMs) deadlines.push(emptySince + settleMs);
+          else deadlines.push(view.atBottom ? settledAt + settleMs : nextScrollAt);
+        }
+        if (suggestionsOnly && !needsFollowerRows && !sawSuggestions && !fromFollowers) {
+          deadlines.push(probeStartedAt + (view.atBottom && !view.loading ? settleMs : suggestionProbeMs));
+        }
+        await watcher.changeOrDeadline(signal, ...deadlines);
         continue;
       }
       emptySince = undefined;
@@ -628,7 +778,11 @@
         lastRetry = performance.now();
         retries++;
       }
-      await wait(signal);
+      const deadlines = [lastProgress + (background ? hiddenTimeoutMs : timeoutMs)];
+      if (!view.loading && !view.atBottom) deadlines.push(nextScrollAt);
+      if (view.atBottom && settledAt !== undefined && found.size) deadlines.push(settledAt + settleMs);
+      if (view.atBottom && retries < 3) deadlines.push(Math.max(lastProgress, lastRetry) + 8000);
+      await watcher.changeOrDeadline(signal, ...deadlines);
     }
     if (!sawDialog) {
       log('Tempo esgotado sem reconhecer a janela Seguidores.');
@@ -646,7 +800,7 @@
 
   async function discover(tabId, references, {
     owner: configuredOwner, signal, suggestionsOnly = false, onUpdate = () => {}, onDiagnostic = () => {},
-    onSuggestion, chooseSuggestions, onObserved, excludedProfiles = [], followerFallback = false,
+    onSuggestion, chooseSuggestions, onObserved, excludedProfiles = [], followerFallback = false, selectedByReference,
   } = {}) {
     if (activeTabs.has(tabId)) throw new Error('Já existe uma leitura nesta aba.');
     if (!Array.isArray(references) || references.length !== 3) throw new Error('Configure três perfis de referência.');
@@ -662,13 +816,19 @@
       const found = new Map();
       for (const reference of seeds) {
         signal?.throwIfAborted();
-        onUpdate(suggestionsOnly
+        const selectedTargets = selectedByReference && new Map(
+          [...(selectedByReference.get(reference) ?? [])].filter(([name]) => !excluded.has(name))
+        );
+        if (selectedTargets && !selectedTargets.size) continue;
+        await onUpdate(selectedTargets
+          ? { message: 'Conferindo perfis selecionados na lista de @' + reference + '…', reference, loaded: 0, limit: selectedTargets.size }
+          : suggestionsOnly
           ? { message: 'Procurando sugestões do Instagram em @' + reference + '…', reference, loaded: 0, limit: automaticSuggestionsPerReference, source: 'suggestions' }
           : { message: 'Lendo seguidores de @' + reference + '…', reference, loaded: 0, limit: samplePerReference });
         const log = message => onDiagnostic('@' + reference + ' · ' + message);
         let candidates;
         try {
-          candidates = await sample(tabId, owner, reference, { signal, onUpdate, log, excluded, suggestionsOnly, followerFallback, onSuggestion, chooseSuggestions, onObserved });
+          candidates = await sample(tabId, owner, reference, { signal, onUpdate, log, excluded, suggestionsOnly, followerFallback, onSuggestion, chooseSuggestions, onObserved, selectedTargets });
         } catch (error) {
           log(signal?.aborted ? 'Leitura interrompida.' : 'A leitura desta referência foi encerrada com erro.');
           if (!error?.clickSent && (signal?.aborted || error?.code === 'follow-limit')) {
@@ -682,12 +842,13 @@
           entry.avatarUrl = avatarUrl(candidate.avatarUrl) || avatarUrl(entry.avatarUrl);
           if (candidate.suggested) {
             (entry.suggestionProfiles ??= []).push(reference);
-            if (suggestionsOnly) {
-              entry.alreadyFollows ||= candidate.alreadyFollows;
-              entry.mutual ||= candidate.mutual;
-            }
           } else entry.sourceProfiles.push(reference);
+          if (suggestionsOnly) {
+            entry.alreadyFollows ||= candidate.alreadyFollows;
+            entry.mutual ||= candidate.mutual;
+          }
           found.set(candidate.username, entry);
+          if (selectedTargets) excluded.add(candidate.username);
         }
         if (candidates.stopped) break;
       }

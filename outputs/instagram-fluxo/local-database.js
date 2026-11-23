@@ -3,7 +3,10 @@
 // This database contains account workflow data only. The provider vault uses its own storage.
 const localDatabase = (() => {
   const prefix = 'instagramFluxoDatabase:v1:';
+  const indexedPrefix = 'instagramFluxoDatabase:v2:';
   const sessionKey = 'instagramFluxoDatabaseBrowserSession';
+  const useIndex = typeof globalThis.indexedDB !== 'undefined';
+  let candidateIndex;
   let sessionPromise;
   const limit = { names: 100000, candidates: 50000, runs: 10000, events: 100000 };
   const relations = new Set(['followers', 'following']);
@@ -72,17 +75,44 @@ const localDatabase = (() => {
 
   async function save(database) {
     database.updatedAt = Date.now();
-    await chrome.storage.local.set({ [prefix + database.owner]: database });
+    const key = (useIndex ? indexedPrefix : prefix) + database.owner;
+    const stored = useIndex ? { ...database, candidates: [] } : database;
+    await chrome.storage.local.set({ [key]: stored });
   }
 
-  async function read(ownerValue) {
+  function index() {
+    if (!candidateIndex) {
+      if (typeof globalThis.Dexie !== 'function') throw new Error('O índice de perfis não está disponível. A base antiga foi preservada.');
+      candidateIndex = new globalThis.Dexie('instagramFluxoCandidates');
+      candidateIndex.version(1).stores({ candidates: '[owner+username], owner', migrations: 'owner' });
+    }
+    return candidateIndex;
+  }
+
+  async function migrateCandidates(database) {
+    const db = index();
+    const { owner } = database;
+    await db.transaction('rw', db.candidates, db.migrations, async () => {
+      if (await db.migrations.get(owner)) return;
+      const rows = database.candidates.map((item, order) => ({ owner, username: item.username, order, item }));
+      if (rows.length) await db.candidates.bulkAdd(rows);
+      await db.migrations.add({ owner });
+    });
+    // Keep the legacy owner document intact for rollback. Only switch keys once the index is committed.
+    await save(database);
+  }
+
+  async function read(ownerValue, includeCandidates = false) {
     const owner = name(ownerValue);
-    const stored = (await chrome.storage.local.get(prefix + owner))[prefix + owner];
-    if (!stored) return empty(owner);
+    const indexedKey = indexedPrefix + owner;
+    const active = useIndex ? (await chrome.storage.local.get(indexedKey))[indexedKey] : null;
+    const legacyKey = prefix + owner;
+    const stored = active ?? (await chrome.storage.local.get(legacyKey))[legacyKey] ?? empty(owner);
     if (stored.schemaVersion !== 1 || stored.owner !== owner || !Array.isArray(stored.runs) ||
       !Array.isArray(stored.events) || !Array.isArray(stored.candidates) || !stored.snapshots || !stored.lastComplete) {
       throw new Error('A base local precisa de uma versão compatível da extensão. Os dados foram preservados.');
     }
+    if (useIndex && !active) await migrateCandidates(stored);
     const session = await browserSession();
     let changed = false;
     for (const run of stored.runs) {
@@ -94,6 +124,10 @@ const localDatabase = (() => {
       }
     }
     if (changed) await save(stored);
+    if (useIndex && includeCandidates) {
+      const rows = await index().candidates.where('owner').equals(owner).sortBy('order');
+      return { ...stored, candidates: rows.map(row => row.item) };
+    }
     return stored;
   }
 
@@ -106,34 +140,58 @@ const localDatabase = (() => {
       alreadyFollows: value.alreadyFollows === true, firstSeenAt: now, lastSeenAt: now };
   }
 
-  function putCandidates(database, message) {
+  function incomingCandidates(database, message) {
     if (!Array.isArray(message.candidates) || message.candidates.length > limit.candidates) {
       throw new Error('Lista de sugestões inválida ou grande demais para salvar.');
     }
-    // Retain previously discovered profiles; an empty search never erases the account library.
-    const byName = new Map(database.candidates.map(item => [item.username, item]));
     const now = Date.now();
-    for (const value of message.candidates) {
-      const item = candidate(value, database.owner, now);
-      if (!item) continue;
-      const previous = byName.get(item.username);
-      if (previous) {
-        item.firstSeenAt = previous.firstSeenAt;
-        item.sourceProfiles = [...new Set([...previous.sourceProfiles, ...item.sourceProfiles])];
-        item.suggestionProfiles = [...new Set([...previous.suggestionProfiles, ...item.suggestionProfiles])];
-        item.alreadyFollows ||= previous.alreadyFollows;
-        item.reason ||= previous.reason;
-        item.label ||= previous.label;
-        item.avatarUrl ||= avatarUrl(previous.avatarUrl);
-        if (previous.lastAction) {
-          item.lastAction = previous.lastAction;
-          item.lastActionAt = previous.lastActionAt;
-          item.reviewAt = previous.reviewAt;
-        }
-      }
-      byName.set(item.username, item);
+    return message.candidates.map(value => candidate(value, database.owner, now)).filter(Boolean);
+  }
+
+  function mergeCandidate(previous, item) {
+    if (!previous) return item;
+    item.firstSeenAt = previous.firstSeenAt;
+    item.sourceProfiles = [...new Set([...previous.sourceProfiles, ...item.sourceProfiles])];
+    item.suggestionProfiles = [...new Set([...previous.suggestionProfiles, ...item.suggestionProfiles])];
+    item.alreadyFollows ||= previous.alreadyFollows;
+    item.reason ||= previous.reason;
+    item.label ||= previous.label;
+    item.avatarUrl ||= avatarUrl(previous.avatarUrl);
+    if (previous.lastAction) {
+      item.lastAction = previous.lastAction;
+      item.lastActionAt = previous.lastActionAt;
+      item.reviewAt = previous.reviewAt;
     }
-    if (byName.size > limit.candidates) throw new Error('A biblioteca local atingiu 50 mil perfis. Exporte os dados antes de continuar.');
+    return item;
+  }
+
+  function checkCandidateCount(count) {
+    if (count > limit.candidates) throw new Error('A biblioteca local atingiu 50 mil perfis. Exporte os dados antes de continuar.');
+  }
+
+  async function putCandidates(database, message) {
+    // Retain previously discovered profiles; an empty search never erases the account library.
+    const candidates = incomingCandidates(database, message);
+    const { owner } = database;
+    if (useIndex) {
+      const db = index();
+      await db.transaction('rw', db.candidates, async () => {
+        const existing = await db.candidates.bulkGet(candidates.map(item => [owner, item.username]));
+        const updates = new Map(existing.filter(Boolean).map(row => [row.username, row]));
+        let count = await db.candidates.where('owner').equals(owner).count();
+        for (const item of candidates) {
+          const previous = updates.get(item.username);
+          updates.set(item.username, { owner, username: item.username, order: previous?.order ?? count++,
+            item: mergeCandidate(previous?.item, item) });
+        }
+        checkCandidateCount(count);
+        if (updates.size) await db.candidates.bulkPut([...updates.values()]);
+      });
+      return;
+    }
+    const byName = new Map(database.candidates.map(item => [item.username, item]));
+    for (const item of candidates) byName.set(item.username, mergeCandidate(byName.get(item.username), item));
+    checkCandidateCount(byName.size);
     database.candidates = [...byName.values()];
   }
 
@@ -220,7 +278,7 @@ const localDatabase = (() => {
       status: value.status, username: value.username ? name(value.username) : null, reasonCode });
   }
 
-  function summary(database, followed = 0) {
+  function summary(database, followed = 0, candidateCount = database.candidates.length) {
     const latestFollow = [...database.runs].reverse().find(run => run.kind === 'follow');
     const relation = key => {
       const snapshot = database.snapshots[key];
@@ -228,7 +286,7 @@ const localDatabase = (() => {
         expected: snapshot?.expected ?? null, collectedAt: snapshot?.collectedAt ?? null,
         lastCompleteAt: database.lastComplete[key]?.collectedAt ?? null };
     };
-    return { owner: database.owner, updatedAt: database.updatedAt, candidates: database.candidates.length,
+    return { owner: database.owner, updatedAt: database.updatedAt, candidates: candidateCount,
       followers: relation('followers'), following: relation('following'),
       runs: database.runs.length, events: database.events.length, followed,
       pendingRun: latestFollow && latestFollow.mode !== 'manual' && ['paused', 'interrupted', 'error', 'running'].includes(latestFollow.status) ? latestFollow : null };
@@ -236,13 +294,14 @@ const localDatabase = (() => {
 
   async function update(message) {
     const database = await read(message.owner);
-    if (message.kind === 'candidates') putCandidates(database, message);
+    if (message.kind === 'candidates') await putCandidates(database, message);
     else if (message.kind === 'snapshot') putSnapshot(database, message);
     else if (message.kind === 'run') await putRun(database, message);
     else if (message.kind === 'event') putEvent(database, message);
     else throw new Error('Dados não reconhecidos pela base local.');
     await save(database);
-    return { summary: summary(database) };
+    const count = useIndex ? await index().candidates.where('owner').equals(database.owner).count() : database.candidates.length;
+    return { summary: summary(database, 0, count) };
   }
 
   function historyRows(entries, owner) {
@@ -269,7 +328,7 @@ const localDatabase = (() => {
 
   async function handle(message, entries = []) {
     if (message.type === 'databaseSave') return update(message);
-    const database = await read(message.owner);
+    const database = await read(message.owner, true);
     const followHistory = historyRows(entries, database.owner);
     if (message.type === 'databaseRead') return { database, summary: summary(database, followHistory.length), followHistory };
     if (message.type === 'databaseExport') {
@@ -282,15 +341,24 @@ const localDatabase = (() => {
 
   async function recordFollow(entry) {
     const database = await read(entry.owner);
-    const item = database.candidates.find(candidate => candidate.username === entry.username);
-    if (item) {
-      item.lastAction = entry.status;
-      item.lastActionAt = entry.followedAt;
-      item.reviewAt = entry.reviewAt;
+    const action = { lastAction: entry.status, lastActionAt: entry.followedAt, reviewAt: entry.reviewAt };
+    if (useIndex) {
+      const fields = Object.fromEntries(Object.entries(action).map(([key, value]) => ['item.' + key, value]));
+      await index().candidates.update([database.owner, entry.username], fields);
+    } else {
+      const item = database.candidates.find(candidate => candidate.username === entry.username);
+      if (item) Object.assign(item, action);
     }
     putEvent(database, { event: { action: 'follow', username: entry.username, status: entry.status, reasonCode: 'confirmed' } });
     await save(database);
   }
 
-  return { handle, recordFollow };
+  async function getCandidate(owner, username) {
+    const database = await read(owner);
+    const normalized = name(username);
+    if (useIndex) return (await index().candidates.get([database.owner, normalized]))?.item ?? null;
+    return database.candidates.find(candidate => candidate.username === normalized) ?? null;
+  }
+
+  return { handle, readWorkflow: read, recordFollow, getCandidate };
 })();

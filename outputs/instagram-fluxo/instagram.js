@@ -6,7 +6,6 @@
   const ownerByTab = new Map();
   const batchLimit = 15;
 
-
   function username(value) {
     const name = typeof value === 'string' ? value.trim().replace(/^@/, '').toLowerCase() : '';
     if (!handle.test(name) || name === '.' || name === '..') throw new Error('O nome de perfil é inválido.');
@@ -67,7 +66,11 @@
     return injected.result;
   }
 
-  function inspectProfile(expected, operation, token, owner, clickBy) {
+  async function inspectProfile(expected, operation, token, owner, clickBy, dispatchId) {
+    if (operation === 'open-unfollow' || operation === 'commit-unfollow') {
+      const guard = await globalThis.instagramFlowAssistedUnfollow.guardRemoval(owner, expected, dispatchId);
+      if (guard !== 'allowed') return { state: guard };
+    }
     if (location.origin === 'https://www.instagram.com' && /^\/(?:challenge|checkpoint|accounts\/(?:suspended|disabled))(?:\/|$)/i.test(location.pathname)) {
       return { state: 'platform-challenge' };
     }
@@ -170,16 +173,12 @@
     const action = options[0];
     const modal = action.closest(modalSelector);
     if (dialogs.length !== 1) return { state: 'unexpected' };
-    const identities = [...modal.innerText.matchAll(/@([a-z0-9._]{1,30})/gi)].map(match => clean(match[1]));
-    const linkedNames = [...modal.querySelectorAll('a[href]')].flatMap(anchor=>{
-      const match = anchor.origin === location.origin && anchor.pathname.match(/^\/([a-z0-9._]{1,30})\/?$/i);
-      return match ? [clean(match[1])] : [];
-    });
-    if (identities.concat(linkedNames).some(name => name !== expected)) return { state: 'unexpected' };
+    const hasCancel = [...modal.querySelectorAll(controlSelector)].some(control =>
+      shown(control) && cancelLabels.includes(caption(control)));
+    if (!globalThis.instagramFlowAssistedUnfollow.identifiesConfirmation(modal, expected, hasCancel || pending.used.length > 0)) {
+      return { state: 'unexpected' };
+    }
     if (pending.used.length > 0) {
-      const hasCancel = [...modal.querySelectorAll(controlSelector)].some(control =>
-        shown(control) && cancelLabels.includes(caption(control))
-      );
       if (!hasCancel || pending.used.length > 1) return { state: 'unexpected' };
     }
     if (operation === 'locate-unfollow') return { state: 'ready' };
@@ -197,6 +196,10 @@
     'site-error': 'O Instagram exibiu um erro. A fila foi interrompida.',
     'permit-expired': 'A autorização de ritmo expirou antes do clique. A fila foi interrompida.',
     'already-follower': 'Este perfil já segue você. Nenhum clique foi enviado.',
+    'platform-restricted': 'O Instagram limitou ações nesta conta. A fila foi pausada.',
+    'action-unconfirmed': 'Uma ação anterior precisa ser conferida antes de retomar.',
+    'unfollow-protected': 'O perfil foi protegido. Nenhuma nova ação será enviada.',
+    'unfollow-not-authorized': 'A seleção salva mudou. A fila foi pausada.',
     'wrong-profile': 'A página aberta não corresponde ao perfil esperado. Fluxo interrompido.',
     'wrong-owner': 'A extensão não conseguiu confirmar a conta conectada. Abra seu próprio perfil no Instagram.',
     'open-overlay': 'Feche o menu ou a janela aberta no Instagram e tente novamente.',
@@ -230,8 +233,8 @@
     return path;
   }
 
-  async function exclusive(owner, callback) {
-    return navigator.locks.request('instagram-fluxo:' + username(owner), { ifAvailable: true }, async lock => {
+  async function exclusive(owner, callback, action = 'follow') {
+    const accountLock = () => navigator.locks.request('instagram-fluxo:' + username(owner), { ifAvailable: true }, async lock => {
       if (!lock) throw new Error('Já existe um fluxo em andamento para esta conta.');
       try {
         const gate = await rpc({type:'recoverActionHold',owner:username(owner)});
@@ -253,6 +256,11 @@
         }
         throw error;
       }
+    });
+    if (action !== 'unfollow') return accountLock();
+    return navigator.locks.request('instagram-fluxo:whitelist', { mode:'shared', ifAvailable:true }, lock => {
+      if (!lock) throw new Error('A lista branca está sendo alterada. Aguarde antes de remover perfis.');
+      return accountLock();
     });
   }
 
@@ -278,7 +286,7 @@
     return response.data;
   }
 
-  async function paceAction(owner, action, signal, onUpdate = () => {}) {
+  async function paceAction(owner, action, signal, onUpdate = () => {}, target = {}) {
     while (true) {
       signal?.throwIfAborted();
       const gate = await rpc({ type: 'pacingRead', owner });
@@ -292,8 +300,11 @@
       }
       try {
         signal?.throwIfAborted();
-        const permit = await rpc({ type: 'pacingCommit', owner, action });
+        const permit = await rpc({ type: 'pacingCommit', owner, action, ...target });
         if (!Number.isSafeInteger(permit?.clickBy) || permit.clickBy <= Date.now()) throw new Error('A autorização de ritmo não pôde ser confirmada.');
+        if (action === 'unfollow' && typeof permit.dispatchId !== 'string') {
+          throw new Error('A autorização para remoção não pôde ser confirmada. Reabra o painel da extensão.');
+        }
         return permit;
       } catch (error) {
         if (error?.code !== 'action-wait') throw error;
@@ -423,11 +434,10 @@
   async function follow(tabId, usernames, { owner, signal, onUpdate = () => {}, onDiagnostic = () => {} } = {}) {
     const account = username(owner ?? ownerByTab.get(tabId));
     const names = [...new Set(usernames.map(username))].filter(name => name !== account);
-    const allowed = names;
-    if (allowed.length === 0 || allowed.length > batchLimit) {
+    if (names.length === 0 || names.length > batchLimit) {
       throw new Error('Selecione de 1 a ' + batchLimit + ' perfis para seguir.');
     }
-    return exclusive(account, () => executeFollow(tabId, account, allowed, { signal, onUpdate, onDiagnostic }));
+    return exclusive(account, () => executeFollow(tabId, account, names, { signal, onUpdate, onDiagnostic }));
   }
 
   function followQuota(owner) {
@@ -455,8 +465,7 @@
   }
 
   async function discover(tabId, references, options) {
-    const candidates = await globalThis.instagramDiscovery.discover(tabId, references, options);
-    return candidates;
+    return globalThis.instagramDiscovery.discover(tabId, references, options);
   }
 
   async function cachedFollowers(account) {
@@ -474,7 +483,8 @@
   }
 
   async function followAutomatically(tabId, references, { owner, target, signal, onUpdate = () => {}, onDiagnostic = () => {},
-    onCandidate = async () => {}, onDispatch = async () => {}, onUncertain, onObserved, skipUsernames = [], aiMode = false, followerFallback = true, profile, decisions = 0, onDecision = async () => {} } = {}) {
+    onCandidate = async () => {}, onDispatch = async () => {}, onUncertain, onObserved, skipUsernames = [], aiMode = false,
+    followerFallback = true, profile, decisions = 0, onDecision = async () => {}, selectedByReference, selectedNames } = {}) {
     const account = username(owner);
     if (!Number.isInteger(target) || target < 1 || target > 200) throw new Error('Escolha uma quantidade de 1 a 200 perfis.');
     return exclusive(account, async () => {
@@ -504,21 +514,46 @@
       }
       try {
         signal?.throwIfAborted();
-        for (const name of (await historicalFollows(account)).keys()) seen.add(name);
+        for (const [name, reason] of await historicalFollows(account)) {
+          seen.add(name);
+          if (!selectedNames?.has(name)) continue;
+          const remembered = reason === 'previously-followed';
+          await onUpdate({ username: name, status: remembered ? 'remembered' : 'skipped', message: '@' + name +
+            (remembered ? ' já foi seguido antes. Perfil pulado.' : ' tem uma tentativa anterior sem confirmação. Perfil pulado.') });
+        }
         if (!(await followQuota(account)).remaining) return finish('quota');
         await ownerOnTab(tabId, account, signal);
         const candidates = [];
-        for (let round = 0; round < 10 && completed() < target; round += 1) {
-          for (const name of await cachedFollowers(account)) seen.add(name);
+        const roundLimit = selectedByReference ? 1 : 10;
+        const reportFollower = name => onUpdate({ username: name, status: 'skipped', message: '@' + name + ' já segue você. Perfil pulado.' });
+        for (let round = 0; round < roundLimit && completed() < target; round += 1) {
+          for (const name of await cachedFollowers(account)) {
+            if (!seen.has(name) && selectedNames?.has(name)) await reportFollower(name);
+            seen.add(name);
+          }
           const before = result.checked;
           if (round) onDiagnostic('Reabrindo as referências para procurar novas sugestões. Rodada ' + (round + 1) + '.');
           const sampled = await discover(tabId, references, {
           owner: account, signal, suggestionsOnly: true, followerFallback: followerFallback === true, onUpdate, onDiagnostic,
           excludedProfiles: [...seen],
-          onObserved,
+          selectedByReference,
+          onObserved: selectedByReference ? async rows => {
+            for (const row of rows) {
+              if (row.alreadyFollows && selectedNames.has(row.username) && !seen.has(row.username)) {
+                seen.add(row.username);
+                await reportFollower(row.username);
+              }
+            }
+            await onObserved?.(rows);
+          } : onObserved,
           chooseSuggestions: aiMode ? chooseSuggestions : undefined,
           async onSuggestion(name, click, candidate) {
             if (seen.has(name)) return;
+            if (selectedByReference && (
+              candidate?.username !== name || candidate.alreadyFollows ||
+              (!candidate.suggestionProfiles?.some(reference => selectedByReference.get(reference)?.get(name)?.suggestion) &&
+               !candidate.sourceProfiles?.some(reference => selectedByReference.get(reference)?.get(name)?.follower))
+            )) return;
             seen.add(name);
             result.checked += 1;
             signal?.throwIfAborted();
@@ -552,12 +587,13 @@
             try {
               status = await click(Math.min(reservation.clickBy, permit.clickBy));
             } catch (error) {
-              if (error?.code !== 'follow-unconfirmed-profile' || !error.clickSent || typeof onUncertain !== 'function') throw error;
+              if (!error?.clickSent || typeof onUncertain !== 'function' ||
+                  (!selectedByReference && error.code !== 'follow-unconfirmed-profile')) throw error;
               // Keep the quota reservation for a click that was sent. Persist
               // the excluded target before authorizing another attempt.
               try {
                 await onUncertain(name, error);
-                const message = '@' + name + ' ficou sem confirmação. Continuando pelos outros perfis.';
+                const message = '@' + name + ' ficou sem confirmação. A fila foi pausada para conferência.';
                 await onUpdate({ username: name, status: 'uncertain', message });
                 onDiagnostic(message);
               } catch (cause) {
@@ -566,8 +602,11 @@
                 throw failure;
               }
               result.unconfirmed += 1;
-              signal?.throwIfAborted();
-              return;
+              if (['restricted', 'platform-restricted', 'platform-challenge'].includes(error.code)) throw error;
+              const failure = new Error('Confira @' + name + ' no Instagram. O primeiro clique sem confirmação pausou a fila.', { cause: error });
+              failure.code = 'action-unconfirmed';
+              failure.clickSent = true;
+              throw failure;
             }
             if (status === 'skipped') {
               await release();
@@ -615,13 +654,64 @@
     });
   }
 
+  async function followSelectedFromLists(tabId, references, candidates, { owner, signal, onUpdate = () => {},
+    onDiagnostic = () => {}, onCandidate, onDispatch, onUncertain } = {}) {
+    if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > batchLimit) {
+      throw new Error('Selecione de 1 a ' + batchLimit + ' perfis para seguir.');
+    }
+    if (!Array.isArray(references) || references.length !== 3) throw new Error('Configure três perfis de referência.');
+    const account = username(owner ?? ownerByTab.get(tabId));
+    const seeds = references.map(username);
+    const selectedByReference = new Map(seeds.map(reference => [reference, new Map()]));
+    if (selectedByReference.size !== 3 || selectedByReference.has(account)) {
+      throw new Error('Use três perfis de referência diferentes entre si e da sua conta.');
+    }
+
+    const selectedNames = new Set();
+    for (const candidate of candidates) {
+      const name = username(candidate?.username);
+      selectedNames.add(name);
+      if (name === account || selectedByReference.has(name)) continue;
+      for (const [sources, kind] of [[candidate.suggestionProfiles, 'suggestion'], [candidate.sourceProfiles, 'follower']]) {
+        if (!Array.isArray(sources)) continue;
+        for (const source of sources) {
+          const targets = selectedByReference.get(source);
+          if (!targets) continue;
+          const selectedSource = targets.get(name) ?? {};
+          selectedSource[kind] = true;
+          targets.set(name, selectedSource);
+        }
+      }
+    }
+
+    const outcomes = new Map();
+    function report(update) {
+      if (update.status && selectedNames.has(update.username)) {
+        outcomes.set(update.username, { username: update.username, status: update.status });
+      }
+      return onUpdate(update);
+    }
+    const hasTargets = [...selectedByReference.values()].some(targets => targets.size);
+    const run = hasTargets ? await followAutomatically(tabId, seeds, { owner: account, target: selectedNames.size, signal,
+      onUpdate: report, onDiagnostic, onCandidate, onDispatch, onUncertain, selectedByReference, selectedNames }) : null;
+    if (!signal?.aborted && run?.reason !== 'quota') {
+      for (const name of selectedNames) {
+        if (outcomes.has(name)) continue;
+        const message = '@' + name + ' não apareceu com um botão Seguir na sua lista de origem. Perfil pulado.';
+        await report({ username: name, status: 'skipped', message });
+        onDiagnostic(message);
+      }
+    }
+    return [...selectedNames].map(name => outcomes.get(name)).filter(Boolean);
+  }
+
   async function readOwnProfile(tabId) {
     const profile = await globalThis.instagramDiscovery.readOwnProfile(tabId);
     ownerByTab.set(tabId, username(profile.username));
     return profile;
   }
 
-  async function unfollowKnownProfile(tabId, owner, name, { signal, previousPath, onUpdate, onWaiting, onDispatch, onConfirmed }) {
+  async function unfollowKnownProfile(tabId, owner, name, { signal, previousPath, cleanerJobId, onUpdate, onWaiting, onDispatch, onConfirmed }) {
     const token = crypto.randomUUID();
     let mutationSent = false;
     const unknown = cause => {
@@ -634,28 +724,33 @@
       const observed = await readRelationship(tabId,name,owner,signal);
       if (observed.state !== 'following') {
         await onUpdate({diagnostic:true,message:'@'+name+' não mostra Seguindo no perfil. Nenhum clique enviado.'});
-        return false;
+        return 'already-not-following';
       }
       await onWaiting(name);
-      const permit = await paceAction(owner,'unfollow',signal,onUpdate);
+      const permit = await paceAction(owner, 'unfollow', signal, onUpdate, {
+        username: name, tabId, ...(cleanerJobId && { cleanerJobId }),
+      });
       // A profile can change during a long pacing wait. Never act from the cache.
       const current = await readRelationship(tabId,name,owner,signal);
       if (current.state !== 'following') {
         await onUpdate({diagnostic:true,message:'O estado de @'+name+' mudou durante a espera. Perfil pulado.'});
-        return false;
+        return 'already-not-following';
       }
       signal?.throwIfAborted();
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['assisted-unfollow.js'] });
       await onDispatch(name);
       signal?.throwIfAborted();
-      const opened = await inject(tabId,inspectProfile,name,'open-unfollow',token,owner,permit.clickBy);
+      const opened = await inject(tabId,inspectProfile,name,'open-unfollow',token,owner,permit.clickBy,permit.dispatchId);
       rejectProfileState(opened?.state);
       if (opened?.state !== 'menu-opened') throw new Error('O menu Seguindo de @'+name+' não foi reconhecido.');
       await poll(()=>inject(tabId,inspectProfile,name,'locate-unfollow',token,owner),value=>value?.state==='ready',signal,8500);
       async function commit() {
         signal?.throwIfAborted();
         // A missing script response after this point is also an uncertain action.
+        const previouslySent = mutationSent;
         mutationSent = true;
-        const sent = await inject(tabId,inspectProfile,name,'commit-unfollow',token,owner,permit.clickBy);
+        const sent = await inject(tabId,inspectProfile,name,'commit-unfollow',token,owner,permit.clickBy,permit.dispatchId);
+        if (sent?.state === 'unfollow-protected') mutationSent = previouslySent;
         rejectProfileState(sent?.state);
         if (sent?.state !== 'sent') throw new Error('A confirmação de @'+name+' mudou.');
       }
@@ -679,36 +774,59 @@
       rejectProfileState(settled?.state);
       if (settled?.state!=='available'||settled.modal) throw new Error('O Instagram voltou a mostrar a relação anterior.');
       await onConfirmed(name);
-      return true;
+      return 'unfollowed';
     } catch(error) {
       if (mutationSent) throw unknown(error);
+      if (error?.code === 'unfollow-protected') return 'protected';
       throw error;
     }
   }
 
-  async function knownUnfollowTargets(owner, confirmed) {
+  async function knownUnfollowTargets(owner, confirmed, inventory) {
     const {database,followHistory} = await rpc({type:'databaseRead',owner});
     const removed = new Set(followHistory.filter(entry=>['unfollowed','gone'].includes(entry.reviewState)).map(entry=>username(entry.username)));
     for (const run of database.runs) if (run.kind==='unfollow-all') for (const name of run.completed) removed.add(username(name));
+    for (const [name, outcome] of Object.entries(inventory.job?.outcomes ?? {})) if (outcome === 'unfollowed') removed.add(username(name));
     const requested = new Set(followHistory.filter(entry=>entry.status==='requested').map(entry=>username(entry.username)));
-    const names = [...followHistory.filter(entry=>entry.status==='following').map(entry=>entry.username),...(database.snapshots.following?.usernames??[])];
-    return [...new Set(names.map(username))].filter(name=>name!==owner&&!removed.has(name)&&!requested.has(name)&&!confirmed.has(name));
+    const pending = new Set(inventory.job?.uncertain ?? []);
+    const names = [...followHistory.filter(entry=>entry.status==='following').map(entry=>entry.username),
+      ...(database.snapshots.following?.usernames ?? []), ...(inventory.rows ?? []).map(row => row.username)];
+    return [...new Set(names.map(username))].filter(name=>name!==owner&&!removed.has(name)&&!requested.has(name)&&!confirmed.has(name)&&!pending.has(name));
   }
 
-  async function unfollowAll(tabId, rawOwner, { signal, onUpdate = () => {}, onQueue = async () => {}, onCheckpoint = async () => {} } = {}) {
+  async function unfollowAll(tabId, rawOwner, { signal, selected, cleanerJobId,
+    onUpdate = () => {}, onQueue = async () => {}, onCheckpoint = async () => {} } = {}) {
     const owner = username(rawOwner);
+    if (selected !== undefined && (!Array.isArray(selected) || selected.length > 200)) {
+      throw new Error('Selecione um lote de até 200 perfis.');
+    }
+    const selection = selected === undefined ? null : new Set(selected.map(username));
+    if (selection && (selection.has(owner) || selection.size !== selected.length)) {
+      throw new Error('A seleção contém nomes repetidos ou a própria conta.');
+    }
+    if (selection?.size && (typeof cleanerJobId !== 'string' || !cleanerJobId)) {
+      throw new Error('Confirme o lote no Limpa Perfil antes de iniciar a remoção.');
+    }
     return exclusive(owner, async () => {
       const confirmed = new Set();
-      const queue = new Set();
+      const queue = new Set(selection ?? []);
       const deferred = new Map();
-      let total = null;
+      const skipped = new Set();
+      const protectedStillFollowing = new Set();
+      const protectedInHistory = new Set();
+      const protectedNames = new Set();
+      let total = selection?.size ?? null;
       let remaining = null;
       let dispatched = false;
       let activeName;
       let token;
+      const outstanding = () => selection && [...selection].filter(name =>
+        !confirmed.has(name) && !skipped.has(name) && !protectedStillFollowing.has(name));
       const progress = () => ({
-        total, unfollowed: confirmed.size, confirmedCount: confirmed.size, remaining,
-        deferred: [...deferred.values()], skipped: deferred.size,
+        total, unfollowed: confirmed.size, confirmedCount: confirmed.size,
+        remaining: selection ? outstanding().length : remaining,
+        protectedCount: new Set([...protectedStillFollowing, ...protectedInHistory]).size,
+        deferred: [...deferred.values()], skipped: skipped.size + deferred.size,
       });
       const pending = message => ({
         ...progress(), completed: false, error: true, code: 'unfollow-pending',
@@ -716,17 +834,35 @@
       });
       const cancel = () => {
         if (!token) return;
-        void inject(tabId, id => {
+        return inject(tabId, id => {
           const scan = globalThis.instagramFluxoUnfollow;
           if (scan?.id === id) scan.controller.abort();
         }, token).catch(() => {});
       };
 
+      async function skip(name, reason) {
+        await onCheckpoint({ username: name, status: 'skipped', reason });
+        if (reason === 'protected') { protectedNames.add(name); protectedStillFollowing.add(name); }
+        else skipped.add(name);
+        dispatched = false;
+        activeName = undefined;
+      }
+
+      if (selection && !selection.size) return { ...progress(), completed: true };
+      const protection = await rpc({ type: 'cleanerProtectionRead', owner });
+      if (!Array.isArray(protection?.protectedNames)) throw new Error('Não foi possível conferir a lista branca.');
+      for (const name of protection.protectedNames.map(username)) protectedNames.add(name);
+      if (selection) {
+        await onQueue([...queue], total);
+        for (const name of selection) if (protectedNames.has(name)) await skip(name, 'protected');
+        if (!outstanding().length) return { ...progress(), completed: true };
+      }
+
       async function startNative() {
         signal?.throwIfAborted();
         token = crypto.randomUUID();
         await chrome.scripting.executeScript({ target: { tabId }, files: ['assisted-unfollow.js'] });
-        await inject(tabId, async (id, account, excluded) => {
+        await inject(tabId, async (id, account, excluded, selectedNames, initialProtection) => {
           const previous = globalThis.instagramFluxoUnfollow;
           previous?.controller.abort();
           if (previous?.done) await previous.done;
@@ -735,19 +871,20 @@
           globalThis.instagramFluxoUnfollow = scan;
           let ready;
           try {
-            ready = await globalThis.instagramFlowAssistedUnfollow.open(account, controller.signal);
+            ready = await globalThis.instagramFlowAssistedUnfollow.open(account, controller.signal, { allowUnknownTotal: selectedNames !== null });
           } catch (error) {
             scan.result = { error: true, message: error.message, code: error.code, clickSent: false };
             return;
           }
           scan.total = ready.total;
-          if (!ready.total) {
+          if (ready.total === 0) {
             scan.result = { count: 0, remaining: 0, message: 'Você não segue nenhuma conta.' };
             return;
           }
           const pause = () => new Promise(resolve => setTimeout(resolve, 100));
           const result = globalThis.instagramFlowAssistedUnfollow.run({
             owner: account, signal: controller.signal, excluded,
+            selected: selectedNames, protectedNames: initialProtection,
             onUpdate: update => { scan.update = update; },
             async beforeAction(name) {
               const request = { username: name, sequence: ++scan.sequence };
@@ -774,6 +911,17 @@
               }
               controller.signal.throwIfAborted();
             },
+            async onProtected(name) {
+              scan.protected = { username: name, sequence: scan.sequence };
+              while (!controller.signal.aborted) {
+                if (scan.acknowledged === scan.sequence) {
+                  scan.protected = null;
+                  return;
+                }
+                await pause();
+              }
+              controller.signal.throwIfAborted();
+            },
           });
           scan.done = result.then(value => {
             scan.result = value;
@@ -783,7 +931,7 @@
               phase: error.phase, clickSent: error.clickSent === true,
             };
           });
-        }, token, owner, [...confirmed, ...deferred.keys()]);
+        }, token, owner, [...confirmed, ...skipped, ...deferred.keys(), ...(protection.job?.uncertain ?? [])], outstanding(), [...protectedNames]);
         if (signal?.aborted) cancel();
       }
 
@@ -793,7 +941,7 @@
           const scan = globalThis.instagramFluxoUnfollow;
           await scan?.done;
           await globalThis.instagramFlowAssistedUnfollow.close(account, new AbortController().signal, name);
-        }, owner, target);
+        }, owner, target ?? null);
         signal?.throwIfAborted();
       }
 
@@ -857,24 +1005,46 @@
           signal?.throwIfAborted();
           const state=await inject(tabId,id=>{
             const scan=globalThis.instagramFluxoUnfollow;
-            return scan?.id===id?{total:scan.total,pending:scan.pending,confirmed:scan.confirmed,result:scan.result,update:scan.update}:null;
+            return scan?.id===id?{total:scan.total,pending:scan.pending,confirmed:scan.confirmed,protected:scan.protected,result:scan.result,update:scan.update}:null;
           },token);
           if(!state)throw new Error('A aba de remoção mudou ou foi fechada.');
           if(total===null&&Number.isSafeInteger(state.total))total=state.total;
           if(Number.isSafeInteger(state.update?.remaining))remaining=state.update.remaining;
           if(state.pending&&state.pending.sequence!==handled){
             const name=username(state.pending.username);
-            if(name===owner||confirmed.has(name)||deferred.has(name))throw new Error('A linha da remoção mudou ou foi repetida.');
-            handled=state.pending.sequence;activeName=name;queue.add(name);await onQueue([...queue],total);
-            await onCheckpoint({username:name,status:'waiting'});
-            const permit=await paceAction(owner,'unfollow',signal,onUpdate);signal?.throwIfAborted();
-            await onCheckpoint({username:name,status:'started'});dispatched=true;
-            const sent=await inject(tabId,(id,sequence,clickBy)=>{
+            if(name===owner||confirmed.has(name)||skipped.has(name)||deferred.has(name)||selection&&!selection.has(name))throw new Error('A linha da remoção mudou ou foi repetida.');
+            handled=state.pending.sequence;
+            activeName=name;
+            queue.add(name);
+            await onQueue([...queue],total);
+            let permit;
+            try {
+              await onCheckpoint({username:name,status:'waiting'});
+              permit=await paceAction(owner, 'unfollow', signal, onUpdate, {
+                username: name, tabId, ...(cleanerJobId && { cleanerJobId }),
+              });
+              signal?.throwIfAborted();
+              await onCheckpoint({username:name,status:'started'});
+              dispatched=true;
+            } catch (error) {
+              if (error?.code !== 'unfollow-protected') throw error;
+              await skip(name, 'protected');
+              permit = { skip: 'protected' };
+            }
+            signal?.throwIfAborted();
+            const sent=await inject(tabId,(id,sequence,value)=>{
               const scan=globalThis.instagramFluxoUnfollow;
               if(scan?.id!==id||scan.controller.signal.aborted||scan.pending?.sequence!==sequence)return false;
-              scan.permit={sequence,clickBy};return true;
-            },token,handled,permit.clickBy);
+              scan.permit={sequence,...value};return true;
+            },token,handled,permit.skip ? { skip: permit.skip } : { clickBy: permit.clickBy, dispatchId: permit.dispatchId });
             if(!sent)throw new Error('A autorização da remoção não pôde ser entregue.');
+          }
+          if (state.protected && state.protected.sequence !== acknowledged) {
+            const name = username(state.protected.username);
+            if (name !== activeName || state.protected.sequence !== handled) throw new Error('O perfil protegido mudou durante a remoção.');
+            await skip(name, 'protected');
+            acknowledged = state.protected.sequence;
+            await inject(tabId,(id,sequence)=>{const scan=globalThis.instagramFluxoUnfollow;if(scan?.id===id)scan.acknowledged=sequence;},token,acknowledged);
           }
           if(state.confirmed&&state.confirmed.sequence!==acknowledged){
             const name=username(state.confirmed.username);
@@ -894,18 +1064,34 @@
               error.clickSent=state.result.clickSent===true||dispatched;throw error;
             }
             remaining=state.result.remaining;
+            for (const name of state.result.protectedFollowing ?? []) protectedStillFollowing.add(username(name));
             const native={reason:state.result.reason,message:state.result.message,diagnostics:state.result.diagnostics};
-            if (remaining === 0 && deferred.size === 0) return { ...progress(), ...native, completed: true };
-            if(native.reason!=='native-following-unavailable')return pending(native.message||'Ainda há perfis pendentes na lista Seguindo.');
+            if (selection && remaining === 0 && deferred.size === 0) {
+              for (const name of outstanding()) await skip(name, 'already-not-following');
+            }
+            if (deferred.size === 0 && (selection ? !outstanding().length : remaining === 0 ||
+                native.reason === 'native-protected-only' && remaining === protectedStillFollowing.size)) {
+              return { ...progress(), ...native, completed: true };
+            }
+            if (!['native-following-unavailable', 'native-selected-pending'].includes(native.reason)) {
+              return pending(native.message||'Ainda há perfis pendentes na lista Seguindo.');
+            }
             await onUpdate({...progress(),...native,diagnostic:true});
-            const names=(await knownUnfollowTargets(owner,confirmed)).filter(name=>!deferred.has(name));
+            const names=(selection ? outstanding() : await knownUnfollowTargets(owner,confirmed,protection)).filter(name=>!deferred.has(name));
             if(!names.length)return pending(native.message+' Não há outros perfis conhecidos pendentes na base local para conferir.');
-            await onUpdate({...progress(),diagnostic:true,message:'A lista não carregou as relações. Conferindo '+names.length+' perfis conhecidos, sem acionar sugestões.'});
+            await onUpdate({...progress(),diagnostic:true,message:`A lista Seguindo parou de carregar. Conferindo ${names.length} ${selection ? 'perfis do lote salvo' : 'perfis conhecidos na base local'}.`});
             await closeNative();
             let previousPath=await ownerOnTab(tabId,owner,signal);
             for(const name of names){
               signal?.throwIfAborted();
-              const removed=await unfollowKnownProfile(tabId,owner,name,{signal,previousPath,onUpdate:update=>onUpdate({...progress(),...update}),
+              const check = await rpc({type:'cleanerCheck',owner,username:name});
+              if (check?.protected !== false && check?.protected !== true) throw new Error('Não consegui confirmar a lista branca.');
+              if (check.protected) {
+                if (selection) await skip(name, 'protected');
+                else protectedInHistory.add(name);
+                continue;
+              }
+              const outcome=await unfollowKnownProfile(tabId,owner,name,{signal,previousPath,cleanerJobId,onUpdate:update=>onUpdate({...progress(),...update}),
                 async onWaiting(target){queue.add(target);await onQueue([...queue],total);await onCheckpoint({username:target,status:'waiting'});},
                 async onDispatch(target){await onCheckpoint({username:target,status:'started'});dispatched=true;},
                 async onConfirmed(target){
@@ -913,14 +1099,20 @@
                   if(Number.isSafeInteger(remaining))remaining=Math.max(0,remaining-1);
                   await onUpdate({...progress(),username:target,status:'unfollowed',message:'Deixou de seguir @'+target+'.'});
                 }});
-              if(!removed)await onCheckpoint({username:name,status:'skipped'});
+              if (outcome !== 'unfollowed') await skip(name, outcome);
               previousPath='/'+name+'/';
             }
             await navigate(tabId,owner,signal,previousPath);await ownerOnTab(tabId,owner,signal);
             const finalOwner=await inject(tabId,inspectProfile,owner,'owner','',owner);rejectProfileState(finalOwner?.state);
             remaining=Number.isSafeInteger(finalOwner?.followingCount)?finalOwner.followingCount:null;
-            return remaining === 0 && deferred.size === 0 ? {...progress(),completed:true,reason:'native-count-zero',message:'O perfil informa zero contas seguidas.'}:
-              pending('Os perfis conhecidos foram conferidos. A lista nativa ainda precisa carregar os perfis restantes.');
+            if (deferred.size === 0) {
+              if (selection && !outstanding().length) return { ...progress(), completed: true, reason: 'selected-complete', message: 'Os perfis da seleção foram conferidos.' };
+              if (!selection && remaining === 0) return { ...progress(), completed: true, reason: 'native-count-zero', message: 'O perfil informa zero contas seguidas.' };
+              if (!selection && remaining > 0 && remaining === protectedStillFollowing.size) {
+                return { ...progress(), completed: true, reason: 'native-protected-only', message: 'Restam apenas os perfis protegidos na lista Seguindo.' };
+              }
+            }
+            return pending('Os perfis conhecidos foram conferidos. A lista nativa ainda precisa carregar os perfis restantes.');
           }
           if(state.update?.message&&state.update.message!==lastMessage){lastMessage=state.update.message;await onUpdate({...progress(),message:lastMessage});}
           await wait(200,signal);
@@ -928,8 +1120,8 @@
       }catch(error){
         if(dispatched)error.clickSent=true;
         error.progress=progress();throw error;
-      }finally{signal?.removeEventListener('abort',cancel);cancel();}
-    });
+      }finally{signal?.removeEventListener('abort',cancel);await cancel();}
+    }, 'unfollow');
   }
 
   globalThis.instagramFlow = {
@@ -937,6 +1129,7 @@
     discover,
     follow,
     followAutomatically,
+    followSelectedFromLists,
     followQuota,
     followBatchLimit: batchLimit,
     readPacing,

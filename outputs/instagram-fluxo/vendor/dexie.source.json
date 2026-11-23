@@ -1,0 +1,8 @@
+{
+  "package": "dexie",
+  "version": "4.4.7",
+  "source": "https://registry.npmjs.org/dexie/-/dexie-4.4.7.tgz",
+  "integrity": "sha512-wemFiCl3DTCnfzyqepUTX1ugbYbkTrw3aEZOG7YjAOUoEQB5g5PrEywPzk5JpbX/SxqQ9IvjUpxCDIEjoOWEfA==",
+  "license": "Apache-2.0",
+  "fileSha256": "cb8f25adfa9df62e466ab2ce0c1d7c06cfc0dd2651256b2b022ccd923bfc9a1a"
+}

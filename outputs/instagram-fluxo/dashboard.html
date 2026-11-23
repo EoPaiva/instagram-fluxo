@@ -25,6 +25,13 @@
   <script src="queue-view.js" defer></script>
   <script src="diagnostic-schema.js" defer></script>
   <script src="diagnostic-client.js" defer></script>
+  <script src="profile-cleaner-inventory.js" defer></script>
+  <script src="profile-cleaner-panel.js" defer></script>
+  <script src="side-panel-link.js" defer></script>
+  <script src="notification-settings.js" defer></script>
+  <script src="workflow-backup-panel.js" defer></script>
+  <script src="dashboard-workspace.js" defer></script>
+  <script src="queue-machine.js" defer></script>
   <script src="dashboard.js" defer></script>
 </head>
 <body>
@@ -32,27 +39,27 @@
   <header class="topbar"><div class="topbar-inner">
     <a class="brand brand-animated" data-brand-wordmark href="https://upaiva.dev/" target="_blank" rel="noopener noreferrer" aria-label="mPaiva_, abrir upaiva.dev em nova aba">mPaiva<span class="brand-caret" aria-hidden="true">_</span></a>
     <span class="product-name">Fluxo Instagram</span>
-    <a class="secondary" href="#unfollow-workspace">Parar de seguir todos <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 10h10m-4-4 4 4-4 4"/></svg></a>
   </div></header>
   <main id="main">
     <header class="intro brand-intro" data-enter>
-      <div class="intro-copy"><h1>Seu Instagram,<br><span>em um só fluxo.</span></h1><p>Siga pessoas das suas referências e acompanhe a fila. Quando decidir, inicie a remoção de todos pela lista Seguindo.</p></div>
+      <div class="intro-copy">
+        <h1>O que você quer fazer?</h1>
+        <div class="workflow-picker" role="group" aria-label="Escolher fluxo do Instagram">
+          <div><button type="button" id="workspace-follow" data-workspace-choice="follow" aria-pressed="true" aria-describedby="workspace-follow-help">Seguir</button><p id="workspace-follow-help">Referências e sugestões.</p></div>
+          <div><button type="button" id="workspace-unfollow" data-workspace-choice="unfollow" aria-pressed="false" aria-describedby="workspace-unfollow-help">Parar de seguir</button><p id="workspace-unfollow-help">Limpa Perfil e remoção em fila.</p></div>
+        </div>
+      </div>
       <div class="brand-orbit">
         <canvas data-brand-planet aria-hidden="true"></canvas>
         <button type="button" class="motion-toggle" data-brand-toggle aria-pressed="false">Pausar animações</button>
       </div>
     </header>
-      <ol class="flow-guide" aria-label="Etapas do fluxo">
-        <li><span class="step-index" aria-hidden="true">01</span><span>Configure as referências<small>Três perfis ligados ao seu nicho.</small></span></li>
-        <li><span class="step-index" aria-hidden="true">02</span><span>Siga as sugestões<small>Escolha a quantidade e acompanhe.</small></span></li>
-        <li><span class="step-index" aria-hidden="true">03</span><span>Pare de seguir quando quiser<small>Você inicia e acompanha a remoção.</small></span></li>
-      </ol>
-    <nav class="section-nav" aria-label="Seções do painel"><a href="#profile-workspace">Seguir perfis</a><a href="#follow-queue">Fila</a><a href="#unfollow-workspace">Parar de seguir todos</a><a href="#local-data">Dados locais</a><a href="#settings">Configurações de IA</a><span class="local-indicator"><span aria-hidden="true"></span>Armazenamento local</span></nav>
-    <div class="workspace"><div class="main-column">
-      <section class="card profile-workspace" id="profile-workspace" aria-labelledby="profile-heading">
-        <div class="card-head"><div><h2 id="profile-heading">Conta e referências</h2><p class="muted" id="profile-prompt">Abra o painel pelo ícone da extensão enquanto estiver no seu perfil do Instagram.</p></div><div class="profile-actions"><button type="button" class="primary" id="load-profile">Carregar meu perfil</button><button type="button" class="secondary" id="analyze" title="Usa um provedor de IA configurado">Analisar com IA</button></div></div>
-        <div id="profile-result" class="profile-result" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg><div><p id="profile-name" class="profile-name"></p><p id="niche"></p></div></div>
-        <div id="search-block" class="search-block" hidden>
+    <nav class="section-nav" aria-label="Seções do painel"><a href="#follow-queue">Fila</a><a href="#review-workspace">Histórico</a><a href="#local-data">Dados locais</a><a href="#settings">Chaves de IA</a><a href="meta-insights.html" target="_blank" rel="noopener">Meta Insights</a></nav>
+    <div class="workspace"><div class="main-column" data-workspace-mode="follow">
+      <section class="card profile-workspace" id="profile-workspace" tabindex="-1" aria-labelledby="profile-heading">
+        <div class="card-head"><div><h2 id="profile-heading">Sua conta</h2><p class="muted" id="profile-prompt">Abra o painel pelo ícone da extensão enquanto estiver no seu perfil do Instagram.</p></div><div class="profile-actions"><button type="button" class="primary" id="load-profile">Carregar meu perfil</button><button type="button" class="secondary" id="analyze" data-workspace="follow" title="Usa um provedor de IA configurado">Analisar com IA</button></div></div>
+        <div id="profile-result" class="profile-result" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg><div><p id="profile-name" class="profile-name"></p><div data-workspace="follow"><p id="niche"></p><p id="profile-analysis-status" class="small muted" role="status"></p></div></div></div>
+        <div id="search-block" class="search-block" data-workspace="follow" hidden>
           <h3>De onde vêm as sugestões?</h3><p class="small muted" id="reference-help">Informe três perfis diferentes do seu nicho. A extensão abre a lista Seguidores de cada um e usa as pessoas exibidas em Sugestões para você.</p>
           <div class="reference-fields">
             <div><label for="reference-1">Primeira referência</label><input id="reference-1" class="reference-input" type="text" maxlength="160" placeholder="@perfil" spellcheck="false" autocomplete="off" aria-describedby="reference-help"></div>
@@ -61,34 +68,87 @@
           </div>
           <div class="reference-actions"><button type="button" class="secondary" id="save-references">Salvar referências</button><p id="reference-status" role="status" class="small muted" aria-atomic="true"></p></div>
           <form class="automatic-follow" id="automatic-follow-form" aria-labelledby="automatic-follow-heading">
-            <div class="automatic-follow-copy"><h3 id="automatic-follow-heading">Seguir automaticamente</h3><p class="small muted" id="automatic-follow-help">Segue pela origem selecionada com o botão Seguir. Pula perfis com o botão Seguir de volta.</p></div>
+            <div class="automatic-follow-copy"><h3 id="automatic-follow-heading">Seguir automaticamente</h3><p class="small muted" id="automatic-follow-help">Segue pela origem selecionada com o botão Seguir. Pula os perfis com o botão Seguir de volta.</p></div>
             <div class="automatic-follow-controls"><div><label for="automatic-follow-amount">Quantidade de pessoas</label><input type="number" id="automatic-follow-amount" min="1" max="200" step="1" value="15" required aria-describedby="automatic-follow-help automatic-follow-quota"></div><button type="submit" class="primary" id="start-automatic-follow">Começar a seguir <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 10h10m-4-4 4 4-4 4"/></svg></button><button type="button" class="secondary" id="resume-follow" hidden>Retomar fila salva</button></div>
             <div class="automatic-follow-source"><label for="automatic-follow-source">Origem dos perfis</label><select id="automatic-follow-source" aria-describedby="automatic-follow-source-help"><option value="suggestions">Somente sugestões</option><option value="fallback" selected>Sugestões + seguidores da referência</option></select><p class="small muted" id="automatic-follow-source-help">Por padrão, se não aparecer Sugestões para você, usa os seguidores da referência com o botão Seguir. Pula Seguir de volta e quem já foi seguido pelo fluxo. Escolha Somente sugestões para desativar essa alternativa.</p></div>
             <p id="automatic-follow-quota" role="status" class="small muted" aria-atomic="true"></p>
-            <details class="pacing-settings">
-              <summary>Ritmo das ações</summary>
-              <p class="small muted" id="pacing-help">Use intervalos variáveis e pausas entre lotes. Esses valores são ajustes locais e não garantem ausência de bloqueios do Instagram.</p>
-              <div class="pacing-fields">
-                <div><label for="pacing-min-delay">Intervalo mínimo (segundos)</label><input type="number" id="pacing-min-delay" min="15" max="3600" step="1" value="45" aria-describedby="pacing-help"></div>
-                <div><label for="pacing-max-delay">Intervalo máximo (segundos)</label><input type="number" id="pacing-max-delay" min="15" max="3600" step="1" value="90" aria-describedby="pacing-help"></div>
-                <div><label for="pacing-batch-size">Ações por lote</label><input type="number" id="pacing-batch-size" min="1" max="50" step="1" value="10" aria-describedby="pacing-help"></div>
-                <div><label for="pacing-batch-pause">Pausa entre lotes (minutos)</label><input type="number" id="pacing-batch-pause" min="1" max="240" step="1" value="10" aria-describedby="pacing-help"></div>
-              </div>
-              <div class="pacing-actions"><button type="button" class="secondary" id="save-pacing">Salvar ritmo</button><button type="button" class="text-button" id="report-platform-block">Pausar por bloqueio</button></div>
-              <p id="pacing-status" class="small muted" role="status" aria-atomic="true"></p>
-            </details>
-            <div class="pacing-block" id="pacing-block" hidden>
-              <p id="pacing-block-message" class="small" role="status" aria-atomic="true">As ações estão pausadas após um bloqueio do Instagram. Confira se a função já está disponível antes de retomar.</p>
-              <button type="button" class="secondary" id="resume-after-block">Retomar após desbloqueio</button>
-            </div>
             <div class="ai-mode-setting"><label class="ai-toggle" for="ai-mode"><input type="checkbox" id="ai-mode" aria-describedby="ai-mode-status ai-mode-help"><span>Usar agente de IA</span></label><div><p id="ai-mode-status" class="small" role="status">Desligado · segue as sugestões diretamente.</p><p id="ai-mode-help" class="small muted">Quando ativado, os dados públicos do perfil e as sugestões visíveis são enviados ao provedor configurado.</p></div></div>
           </form>
-          <div class="manual-discovery"><p class="small muted">Prefere escolher os perfis antes?</p><button type="button" class="text-button" id="discover">Ver sugestões <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M5 10h10m-4-4 4 4-4 4"/></svg></button></div>
+          <div class="manual-discovery">
+            <button type="button" class="secondary" id="discover" aria-controls="recommendation-section">Ver perfis salvos</button>
+            <button type="button" class="text-button" id="refresh-suggestions" aria-describedby="suggestions-help">Atualizar sugestões</button>
+            <p class="small muted" id="suggestions-help">A atualização só coleta perfis. Revise os resultados e escolha quem seguir.</p>
+            <p class="small muted" id="suggestions-status" role="status" aria-atomic="true"></p>
+          </div>
+        </div>
+        <div class="account-safety">
+          <div class="pacing-block" id="pacing-block" hidden>
+            <p id="pacing-block-message" class="small" role="status" aria-atomic="true">As ações estão pausadas após um bloqueio do Instagram. Confira se a função já está disponível antes de retomar.</p>
+            <button type="button" class="secondary" id="resume-after-block">Retomar após desbloqueio</button>
+          </div>
+          <details class="pacing-settings">
+            <summary>Ritmo e pausas</summary>
+            <p class="small muted" id="pacing-help">As pausas entre lotes valem para os dois fluxos.</p>
+            <div class="pacing-fields">
+              <div data-workspace="follow"><label for="pacing-min-delay">Intervalo mínimo para seguir (segundos)</label><input type="number" id="pacing-min-delay" min="15" max="3600" step="1" value="45" aria-describedby="pacing-help"></div>
+              <div data-workspace="follow"><label for="pacing-max-delay">Intervalo máximo para seguir (segundos)</label><input type="number" id="pacing-max-delay" min="15" max="3600" step="1" value="90" aria-describedby="pacing-help"></div>
+              <div><label for="pacing-batch-size">Ações por lote</label><input type="number" id="pacing-batch-size" min="1" max="50" step="1" value="10" aria-describedby="pacing-help"></div>
+              <div><label for="pacing-batch-pause">Pausa entre lotes (minutos)</label><input type="number" id="pacing-batch-pause" min="1" max="240" step="1" value="10" aria-describedby="pacing-help"></div>
+            </div>
+            <div class="pacing-actions"><button type="button" class="secondary" id="save-pacing">Salvar ritmo</button><button type="button" class="text-button" id="report-platform-block">Pausar por bloqueio</button></div>
+            <p id="pacing-status" class="small muted" role="status" aria-atomic="true"></p>
+          </details>
         </div>
       </section>
       <div class="progress-bar" id="progress-bar" hidden><div class="progress-content"><p id="flow-status" role="status" aria-atomic="true"></p><progress id="flow-progress-meter" max="1" aria-label="Progresso da etapa atual" aria-describedby="flow-status" hidden></progress></div><button type="button" class="secondary stop" id="stop" hidden>Parar fluxo</button></div>
+      <section class="card cleaner" id="profile-cleaner" data-workspace="unfollow" aria-labelledby="cleaner-heading">
+        <div class="card-head"><div><h2 id="cleaner-heading">Limpa Perfil</h2><p class="muted">Revise quem você segue em lotes de até 200. Páginas e empresas com sinais de identificação vêm selecionadas.</p></div></div>
+        <div class="cleaner-actions">
+          <button type="button" class="secondary" id="cleaner-scan" disabled>Ler lista Seguindo</button>
+          <label class="cleaner-import" for="cleaner-import">Importar dados do Instagram<input id="cleaner-import" type="file" accept=".zip,.json,.html,.htm" aria-describedby="cleaner-summary" disabled></label>
+        </div>
+        <p id="cleaner-summary" class="small muted" role="status">Carregue sua conta para começar.</p>
+        <p id="cleaner-status" role="status" aria-atomic="true" class="small" hidden></p>
+        <details class="cleaner-protection" id="cleaner-protection">
+          <summary>Lista branca <span class="muted" id="cleaner-protected-count"></span></summary>
+          <p class="small muted">Perfis protegidos neste Chrome ficam fora das remoções em todas as contas. A lista abaixo mostra as proteções da conta carregada. Desmarcar um perfil também o protege.</p>
+          <form id="cleaner-protect-form" class="cleaner-protect-form">
+            <div><label for="cleaner-protect-name">Perfil a proteger</label><input id="cleaner-protect-name" type="text" maxlength="31" placeholder="@perfil" autocomplete="off" spellcheck="false" required disabled></div>
+            <button type="submit" id="cleaner-protect-submit" class="secondary" disabled>Proteger</button>
+          </form>
+          <ul id="cleaner-protected" class="list cleaner-protected-list" aria-label="Perfis protegidos"></ul>
+        </details>
+        <div class="cleaner-job" id="cleaner-job" hidden>
+          <p id="cleaner-job-status" class="small" role="status"></p>
+          <ul id="cleaner-uncertain" class="list" aria-label="Resultados para conferir"></ul>
+          <div class="cleaner-actions">
+            <button type="button" class="primary" id="cleaner-resume">Retomar lote salvo</button>
+            <button type="button" class="secondary" id="cleaner-discard">Descartar lote</button>
+          </div>
+        </div>
+        <div id="cleaner-review" hidden>
+          <div class="cleaner-review-header"><h3 tabindex="-1" id="cleaner-list-heading">Revisar perfis</h3><p id="cleaner-selection" class="small muted" role="status"></p></div>
+          <ul id="cleaner-list" class="list cleaner-list" aria-labelledby="cleaner-list-heading"></ul>
+          <div class="cleaner-review-controls">
+            <div class="cleaner-actions" aria-label="Paginação">
+              <button type="button" class="secondary" id="cleaner-prev">Anterior</button>
+              <span id="cleaner-page" class="small muted"></span>
+              <button type="button" class="secondary" id="cleaner-next">Próximo</button>
+            </div>
+            <button type="button" class="primary" id="cleaner-confirm" disabled>Revisar seleção</button>
+          </div>
+        </div>
+        <dialog id="cleaner-confirm-dialog" class="cleaner-dialog" aria-labelledby="cleaner-confirm-heading">
+          <h3 id="cleaner-confirm-heading">Confirmar lote</h3>
+          <p id="cleaner-confirm-summary" class="muted"></p>
+          <div class="cleaner-actions"><button type="button" class="secondary" id="cleaner-cancel" autofocus>Voltar</button><button type="button" class="primary" id="cleaner-execute">Confirmar e iniciar</button></div>
+        </dialog>
+      </section>
+      <section class="unfollow-section" id="unfollow-workspace" data-workspace="unfollow" aria-labelledby="unfollow-all-heading"><div><h2 id="unfollow-all-heading">Parar de seguir todos</h2><p class="muted">Remove as contas na lista Seguindo, mantendo os perfis protegidos pela lista branca.</p></div><button type="button" class="secondary stop" id="unfollow-all" disabled>Iniciar unfollow de todos</button></section>
       <section class="queue-panel" id="follow-queue" aria-labelledby="queue-heading" aria-roledescription="carrossel" data-state="idle" data-following-current="true">
-        <div class="queue-heading"><div><h2 id="queue-heading">Sua fila, perfil por perfil.</h2><p class="queue-owner" id="queue-owner">Nenhuma conta carregada</p></div><p class="queue-state" id="queue-state">Pronta para começar</p></div>
+        <div class="queue-heading"><div><h2 id="queue-heading">Sua fila</h2><p class="queue-owner" id="queue-owner">Nenhuma conta carregada</p></div><div class="queue-heading-actions"><p class="queue-state" id="queue-state" data-workspace="follow">Pronta para começar</p><button type="button" class="secondary" id="open-side-panel" aria-describedby="side-panel-error" hidden>Abrir painel lateral</button></div></div>
+        <p class="side-panel-error small" id="side-panel-error" role="status"></p>
+        <div class="queue-follow-content" data-workspace="follow">
         <div class="queue-meter" id="queue-meter" hidden><div class="queue-meter-copy"><p id="queue-progress-label">0 ações confirmadas</p><p id="queue-results">0 seguidos · 0 solicitações</p></div><progress id="queue-progress" max="1" value="0" aria-labelledby="queue-progress-label"></progress></div>
         <div class="queue-empty" id="queue-empty"><svg aria-hidden="true" viewBox="0 0 48 48"><path d="M5 13h18M5 24h27M5 35h18m9-22 11 11-11 11"/></svg><div><h3 id="queue-empty-title">Sua próxima sequência começa aqui</h3><p>O perfil atual fica em destaque, entre os anteriores e os próximos da fila.</p></div></div>
         <div class="queue-stage" id="queue-stage" tabindex="0" role="group" aria-label="Perfis da fila. Use as setas para consultar, Home para o primeiro e End para o último." hidden></div>
@@ -97,28 +157,60 @@
         <div class="queue-photo-setting"><p id="queue-photo-help">Veja as fotos do Instagram e salve miniaturas neste Chrome.</p><button class="secondary" type="button" id="queue-enable-photos" aria-describedby="queue-photo-help">Ativar fotos</button><p id="queue-photo-status" role="status" aria-atomic="true"></p></div>
         <div class="queue-notice"><p class="queue-message" id="queue-message">Carregue seu perfil, configure as referências e inicie uma fila.</p><p class="queue-countdown" id="queue-countdown" aria-hidden="true" hidden></p></div>
         <p class="queue-sr-only" id="queue-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+        </div>
+        <div class="queue-photo-setting">
+          <p id="queue-shortcut-help">Atalho padrão de parada <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></p>
+          <button class="secondary" type="button" id="queue-notifications-toggle" aria-pressed="false" aria-describedby="queue-notifications-status">Notificações da fila</button>
+          <p id="queue-notifications-status" role="status" aria-atomic="true"></p>
+        </div>
       </section>
       <details class="discovery-log" id="discovery-log" hidden><summary>Registro de execução</summary><textarea id="discovery-log-text" aria-label="Log da busca e do lote" readonly rows="6"></textarea><div class="discovery-log-actions"><button type="button" class="secondary" id="copy-discovery-log">Copiar log</button><p id="discovery-log-status" role="status" class="small muted"></p></div></details>
-      <section class="card recommendation-section" id="recommendation-section" aria-labelledby="recommendation-heading" hidden>
+      <section class="card recommendation-section" id="recommendation-section" data-workspace="follow" aria-labelledby="recommendation-heading" hidden>
         <details class="recommendation-disclosure">
           <summary><h2 id="recommendation-heading">Sugestões para seguir <span id="selection-count" class="muted"></span></h2></summary>
-          <div class="recommendation-actions"><button type="button" class="primary" id="follow">Seguir selecionados</button></div>
+          <div class="recommendation-actions">
+            <button type="button" class="secondary" id="select-suggestion-batch">Selecionar até 15 perfis</button>
+            <button type="button" class="primary" id="follow" aria-describedby="follow-selected-help">Seguir selecionados</button>
+            <p id="follow-selected-help" class="small muted">A fila usa os botões da lista de origem e pula os perfis que não estiverem disponíveis nela.</p>
+          </div>
           <ul id="recommendations" class="list"></ul>
         </details>
       </section>
       <section class="card review-workspace" id="review-workspace" aria-labelledby="history-heading">
-        <details class="history-disclosure">
+        <details class="history-disclosure" id="history-disclosure">
           <summary><h2 id="history-heading">Histórico de ações</h2></summary>
           <div class="card-head"><p class="muted">A memória de quem já foi seguido permanece salva, inclusive após a remoção.</p><button type="button" class="secondary" id="refresh-history">Atualizar histórico</button></div>
           <p id="history-status" role="status" class="muted history-status"></p>
-          <ul id="history" class="list"></ul>
+          <div id="history-viewport" class="history-viewport" role="region" aria-label="Registros do histórico" aria-describedby="history-count history-keys" tabindex="0" hidden>
+            <span id="history-row-measure" class="history-row-measure" aria-hidden="true"></span>
+            <ul id="history" class="list history-list" role="list"></ul>
+          </div>
+          <p id="history-count" class="small muted history-count" hidden></p>
+          <p id="history-keys" class="small muted history-keys" hidden>Use as setas para navegar e Home ou End para ir ao início ou ao fim.</p>
         </details>
       </section>
-      <section class="unfollow-section" id="unfollow-workspace" aria-labelledby="unfollow-all-heading"><div><h2 id="unfollow-all-heading">Parar de seguir todos</h2><p class="muted">Abre Seguindo e remove uma conta por vez, como no Unfollow assistido. A fila carrega as linhas conforme avança. Se a lista não mostrar suas relações, confere os perfis conhecidos no histórico. Você pode parar a execução.</p></div><button type="button" class="secondary stop" id="unfollow-all" disabled>Iniciar unfollow de todos</button></section>
       <section class="card local-data" id="local-data" aria-labelledby="local-heading">
         <div class="card-head"><div><h2 id="local-heading">Sua base local</h2><p class="muted">Sugestões, filas e histórico ficam neste navegador, separados por conta.</p></div><span class="storage-label">Neste Chrome</span></div>
         <p id="local-summary" class="local-summary" role="status">Carregue seu perfil para consultar os dados desta conta.</p><p id="local-updated" class="small muted"></p><p id="local-data-status" class="small muted" role="status"></p>
         <div class="local-actions"><button type="button" class="secondary" id="refresh-local-data" disabled>Atualizar resumo</button><button type="button" class="secondary" id="export-data" disabled>Exportar dados locais</button></div>
+        <details class="local-maintenance">
+          <summary>Backup e armazenamento</summary>
+          <div class="local-actions">
+            <button type="button" class="secondary" id="backup-save" disabled>Salvar backup em pasta</button>
+            <button type="button" class="secondary" id="backup-choose" disabled>Restaurar backup</button>
+            <input type="file" accept=".json,application/json" id="backup-file" hidden aria-label="Arquivo JSON de backup">
+          </div>
+          <p class="small muted" id="backup-status" role="status"></p>
+          <dialog id="backup-dialog" class="cleaner-dialog" aria-labelledby="backup-heading" aria-describedby="backup-preview">
+            <h3 id="backup-heading">Restaurar backup</h3>
+            <p class="muted" id="backup-preview"></p>
+            <p class="small muted">A extensão incorpora os dados compatíveis à conta carregada. Os perfis protegidos continuam na lista branca.</p>
+            <div class="cleaner-actions"><button type="button" class="secondary" id="backup-cancel" autofocus>Voltar</button><button type="button" class="primary" id="backup-apply" disabled>Confirmar restauração</button></div>
+          </dialog>
+          <button type="button" class="text-button" id="storage-refresh">Medir espaço usado</button>
+          <p class="small muted" id="storage-status" role="status"></p>
+          <dl class="storage-totals" id="storage-totals" hidden></dl>
+        </details>
         <p id="diagnostic-status" class="small muted" role="status">Conferindo o gravador de logs locais…</p>
         <p id="diagnostic-detail" class="small muted"></p>
         <button type="button" class="text-button" id="diagnostic-retry">Verificar gravação dos logs</button>

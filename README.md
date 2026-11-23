@@ -4,25 +4,25 @@
 
 <h1 align="center">Instagram Fluxo</h1>
 
+<p align="center">Extensão local para organizar sugestões, revisar a lista Seguindo e acompanhar filas no Chrome.</p>
+
 <p align="center">
-  <a href="outputs/instagram-fluxo/manifest.json"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FEoPaiva%2Finstagram-fluxo%2Fmain%2Foutputs%2Finstagram-fluxo%2Fmanifest.json&amp;query=%24.version&amp;prefix=v&amp;label=Vers%C3%A3o&amp;color=7c3aed&amp;style=for-the-badge" alt="Versão da extensão"></a>
-  <a href="#instalação-local"><img src="https://img.shields.io/badge/Chrome-Manifest_V3-1d4ed8?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Manifest V3, instalação local"></a>
+  <a href="https://github.com/EoPaiva/instagram-fluxo/releases/latest"><img src="https://img.shields.io/github/v/release/EoPaiva/instagram-fluxo?label=Vers%C3%A3o&amp;color=7c3aed&amp;style=for-the-badge" alt="Versão da extensão"></a>
+  <a href="#instalação-local"><img src="https://img.shields.io/badge/Chrome-Manifest_V3-1d4ed8?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Chrome Manifest V3"></a>
   <a href="https://upaiva.dev/"><img src="https://img.shields.io/badge/upaiva.dev-242934?style=for-the-badge" alt="Site upaiva.dev"></a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/JavaScript-242934?style=for-the-badge&amp;logo=javascript&amp;logoColor=F7DF1E" alt="JavaScript">
-  <img src="https://img.shields.io/badge/HTML5-242934?style=for-the-badge&amp;logo=html5&amp;logoColor=F16529" alt="HTML5">
-  <img src="https://img.shields.io/badge/CSS-242934?style=for-the-badge&amp;logo=css&amp;logoColor=B7A3FF" alt="CSS">
-  <img src="https://img.shields.io/badge/Python-242934?style=for-the-badge&amp;logo=python&amp;logoColor=85B7E5" alt="Python">
-  <img src="https://img.shields.io/badge/PowerShell-242934?style=for-the-badge" alt="PowerShell">
-  <img src="https://img.shields.io/badge/SQLite-242934?style=for-the-badge&amp;logo=sqlite&amp;logoColor=61C5F5" alt="SQLite">
+  <img src="https://img.shields.io/badge/HTML%20%26%20CSS-242934?style=for-the-badge&amp;logo=html5&amp;logoColor=F16529" alt="HTML e CSS">
+  <img src="https://img.shields.io/badge/XState-242934?style=for-the-badge&amp;logo=xstate" alt="XState">
+  <img src="https://img.shields.io/badge/Dexie-IndexedDB-242934?style=for-the-badge" alt="Dexie e IndexedDB">
+  <img src="https://img.shields.io/badge/WXT-242934?style=for-the-badge" alt="WXT">
+  <img src="https://img.shields.io/badge/MSW-Testes-242934?style=for-the-badge" alt="MSW para testes">
 </p>
 
-<p align="center">Sugestões, filas e histórico local para administrar quem você segue no Instagram.</p>
-
 <p align="center">
-  <a href="#a-fila-em-ação">Demonstração</a> · <a href="#como-funciona">Fluxos</a> · <a href="#instalação-local">Instalação</a>
+  <a href="#a-fila-em-ação">Demonstração</a> · <a href="#como-funciona">Fluxos</a> · <a href="#instalação-local">Instalação</a> · <a href="#desenvolvimento">Desenvolvimento</a>
 </p>
 
 ## A fila em ação
@@ -30,7 +30,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="assets/fila-em-acao.png">
-    <img src="assets/fila-em-acao.gif" width="800" alt="Gráfico animado de uma fila de exemplo com seis perfis. Quatro confirmados, um para conferir e um pulado.">
+    <img src="assets/fila-em-acao.gif" width="800" alt="Fila de exemplo com seis perfis. Quatro confirmados, um para conferir e um pulado.">
   </picture>
 </p>
 
@@ -38,78 +38,66 @@
 
 ## Como funciona
 
-### Seguir sugestões
+| Área | O que você faz |
+| --- | --- |
+| **Seguir** | Configure três referências, consulte as sugestões salvas e escolha um lote ou uma quantidade para o modo automático. Se quiser, use IA com uma chave própria para ordenar os candidatos. |
+| **Parar de seguir** | No **Limpa Perfil**, revise até 200 contas por página e confirme as que deseja remover. Em **Parar de seguir todos**, a extensão percorre a lista preservando os perfis protegidos. |
+| **Barra lateral** | Veja o perfil atual, próximos nomes e progresso. Pare a fila, copie seu resumo ou abra **Seguir**, **Parar de seguir** e **Lista branca**. |
+| **Dados locais** | Consulte o histórico, gerencie a lista branca e salve ou restaure backups por conta. |
+| **Meta Insights** | Consulte métricas da sua conta profissional com um token usado só para a consulta. |
 
 ```mermaid
-flowchart TD
-    accTitle: Fluxo para seguir perfis sugeridos
-    accDescr: A extensão verifica a elegibilidade, respeita o intervalo e registra o resultado antes de avançar.
-    A["Ler sugestões das referências"] --> B{"Perfil elegível?"}
-    B -->|Sim| C["Aguardar e seguir"]
+flowchart LR
+    accTitle: Da seleção ao resultado salvo
+    accDescr: Cada operação verifica o perfil e salva a etapa antes de agir. Perfis inelegíveis são pulados e resultados incertos ficam pendentes.
+    A["Seguir ou remover"] --> B{"Perfil elegível?"}
+    B -->|Sim| C["Salvar etapa da fila"]
     B -->|Não| D["Pular perfil"]
-    C --> E["Conferir e salvar o resultado"]
-    classDef choice fill:#2d2454,stroke:#a18ced,color:#f4f0ff
-    class B choice
-```
-
-<details>
-<summary>Parar de seguir todos</summary>
-
-```mermaid
-flowchart TD
-    accTitle: Fluxo para parar de seguir
-    accDescr: A extensão usa a lista Seguindo. Quando a lista demora, confere o estado no próprio perfil antes de continuar.
-    A["Abrir a lista Seguindo"] --> B["Remover perfil verificado"]
-    B --> C{"Lista confirmou a remoção?"}
-    C -->|Sim| D["Salvar remoção"]
-    C -->|Demorou| E{"Ainda mostra Seguindo no perfil?"}
-    E -->|Não| D
-    E -->|Sim| F["Deixar para conferência"]
-    D --> G["Avançar na fila"]
-    F --> G
+    C --> E["Acionar controle do Instagram"]
+    E --> F{"Resultado confirmado?"}
+    F -->|Sim| G["Salvar e avançar"]
+    F -->|Incerto| H["Guardar para conferência"]
     classDef choice fill:#2d2454,stroke:#a18ced,color:#f4f0ff
     classDef pending fill:#382a1e,stroke:#d6a871,color:#ffe8c9
-    class C,E choice
-    class F pending
+    class B,F choice
+    class H pending
 ```
 
-</details>
-
-Um aviso de restrição do Instagram ou um resultado que a extensão não consegue conferir pausa a fila e preserva o progresso.
-
-## O que faz
-
-- Segue perfis a partir das sugestões de três referências configuráveis, com alternativa pelos seguidores das referências.
-- Pula perfis que seguem você, contas já processadas e os perfis de referência.
-- Oferece agente de IA opcional com BYOK e fallback entre OpenAI, Claude, Gemini e OpenRouter.
-- Executa unfollow de todas as contas em fila, com parada, histórico e conferência de resultados atrasados.
-- Mostra a fila em carrossel com miniaturas locais e os cards expansíveis de sugestões e histórico.
-- Mantém filas, tentativas e histórico no Chrome. O coletor Windows opcional grava diagnósticos em JSONL.
+- **Seguir** exclui quem já segue você, os perfis de referência e as contas já seguidas pelo fluxo. A coleta e a execução podem ser iniciadas separadamente.
+- **Lista branca** vale para as duas opções de remoção, inclusive quando o fluxo precisa consultar o inventário ou o histórico salvo. O Limpa Perfil aceita a leitura da lista Seguindo ou a importação de uma exportação do Instagram.
+- **Parada e retomada** preservam os resultados confirmados. Use **Retomar fila salva** no modo automático de seguir ou **Retomar lote salvo** no Limpa Perfil. Se encontrar uma restrição do Instagram, a extensão pausa as ações.
+- **IA opcional** usa o cofre local e pode trocar entre OpenAI, Gemini, OpenRouter e Claude em caso de cota esgotada ou credencial recusada. Os dados públicos necessários à análise são enviados ao provedor escolhido.
 
 ## Instalação local
 
-1. Clone ou baixe este repositório.
-2. Abra `chrome://extensions` e ative **Modo do desenvolvedor**.
-3. Clique em **Carregar sem compactação** e selecione `outputs/instagram-fluxo`.
-4. Abra seu perfil no Instagram e clique no ícone da extensão.
-5. Carregue a conta, salve as três referências e escolha a ação desejada.
+1. Baixe e extraia o ZIP da [versão mais recente](https://github.com/EoPaiva/instagram-fluxo/releases/latest).
+2. Abra `chrome://extensions`, ative o **Modo do desenvolvedor** e escolha **Carregar sem compactação**.
+3. Selecione a pasta extraída que contém `manifest.json`.
+4. No Instagram, abra seu perfil, clique no ícone da extensão e carregue a conta no painel.
 
-Ao atualizar, recarregue a mesma instalação para conservar seus dados locais.
+Para atualizar, extraia os novos arquivos na pasta já usada pelo Chrome e clique em **Recarregar**. Use o mesmo perfil do Chrome para conservar as chaves, a lista branca e o histórico.
 
-## Fluxo e dados
+## Dados e diagnóstico
 
-O modo automático usa o intervalo e as pausas configurados. Cada tentativa enviada conta na cota local. O total de ações bem-sucedidas inclui apenas resultados confirmados.
+Inventário, histórico, lista branca e filas ficam no Chrome. O backup exclui chaves de IA. No Windows, o gravador opcional em Python registra diagnósticos em JSONL por Native Messaging. Ele precisa ser vinculado ao ID da sua instalação.
 
-No unfollow, uma confirmação atrasada é conferida no próprio perfil. Se ele ainda aparecer como seguido, a fila registra a pendência e continua pelos demais. Uma nova execução pode conferir os pendentes novamente. A conclusão exige uma contagem nativa de zero e o salvamento do resultado.
+[Guia de uso, backup e logs](outputs/instagram-fluxo/LEIA-ME.md)
 
-As chaves ficam no cofre local. Ao ativar a IA, os dados públicos necessários à análise são enviados ao provedor escolhido. Logs e dados gerados durante o uso ficam fora deste repositório.
+## Desenvolvimento
 
-## Logs em arquivo no Windows
+O painel e o worker usam JavaScript em Manifest V3. O **XState** controla início, parada e liberação do envio após a gravação. **Dexie** indexa candidatos no IndexedDB. O **WXT** empacota a extensão e o **MSW** simula a rede nos testes.
 
-O histórico funciona no Chrome. Para gravar diagnósticos em `logs/instagram-fluxo`, o coletor Windows incluso precisa do Python e de um vínculo com o ID da extensão. O instalador e o coletor vêm configurados para a instalação original. Uma instalação nova precisa configurar o próprio ID antes de registrar o coletor.
+```powershell
+cd outputs/instagram-fluxo-tooling
+npm ci
+npm test
+npm run zip
+```
 
-Detalhes de funcionamento estão no [guia da extensão](outputs/instagram-fluxo/LEIA-ME.md).
+Use Node.js 22.12 ou mais recente. O ZIP fica em `.output/`. Os testes do executor foram verificados em Chrome isolado, com páginas fictícias e dados locais descartáveis.
+
+[Instruções de build e testes](outputs/instagram-fluxo-tooling/README.md)
 
 ---
 
-<p align="center">Desenvolvido por <a href="https://upaiva.dev">mPaiva_</a></p>
+<p align="center">Desenvolvido por <a href="https://upaiva.dev/">mPaiva_</a></p>

@@ -4,7 +4,6 @@
 const agentPolicy = (() => {
   const actions = new Set(['follow', 'scroll', 'next_reference', 'stop']);
 
-
   function boundedText(value, max) {
     return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '';
   }

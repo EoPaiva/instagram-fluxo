@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#080808">
+  <title>Fila · Instagram Fluxo</title>
+  <link rel="icon" href="icons/upaiva-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="sidepanel.css">
+  <script src="side-panel-link.js" defer></script>
+  <script src="sidepanel.js" defer></script>
+</head>
+<body>
+  <header class="brand">
+    <img src="icons/upaiva-32.png" width="22" height="22" alt="">
+    <span>Instagram Fluxo</span>
+  </header>
+  <main>
+    <h1>Fila</h1>
+    <nav class="workspace-shortcuts" aria-label="Atalhos do painel principal">
+      <button id="side-open-follow" type="button" disabled>Seguir</button>
+      <button id="side-open-unfollow" type="button" disabled>Parar de seguir</button>
+      <button id="side-open-whitelist" type="button" disabled>Lista branca</button>
+    </nav>
+    <p id="side-shortcut-status" class="shortcut-status" role="status" aria-atomic="true"></p>
+    <section class="queue" aria-label="Atividade da fila" hidden>
+      <div class="queue-header">
+        <h2 id="side-kind"></h2>
+        <p id="side-owner" hidden></p>
+      </div>
+      <div id="side-current" class="current" hidden>
+        <span>Perfil atual</span>
+        <strong id="side-current-name"></strong>
+      </div>
+      <div id="side-progress" class="progress" hidden>
+        <div class="progress-copy">
+          <label for="side-progress-bar" id="side-progress-label">Perfis processados</label>
+          <span id="side-progress-count"></span>
+        </div>
+        <progress id="side-progress-bar" max="1" value="0" aria-describedby="side-progress-count"></progress>
+        <p id="side-results" hidden></p>
+      </div>
+      <div id="side-upcoming" class="upcoming" hidden>
+        <h3 id="side-upcoming-label">Na fila</h3>
+        <ul id="side-upcoming-list" aria-labelledby="side-upcoming-label"></ul>
+      </div>
+    </section>
+    <div class="status" role="status" aria-atomic="true">
+      <p id="side-state" class="state">Conectando à fila</p>
+      <p id="side-message">Aguarde um instante.</p>
+    </div>
+    <div class="actions">
+      <button id="side-stop" type="button" disabled>Parar fila</button>
+      <button id="side-copy-summary" type="button" disabled hidden>Copiar resumo</button>
+    </div>
+    <p id="side-copy-status" class="shortcut-status" role="status" aria-atomic="true"></p>
+  </main>
+</body>
+</html>

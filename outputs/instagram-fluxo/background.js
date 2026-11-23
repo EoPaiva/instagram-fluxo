@@ -1,7 +1,9 @@
 'use strict';
 
-importScripts('provider-vault.js', 'local-database.js', 'agent-policy.js', 'action-pacing.js', 'profile-photos.js');
+importScripts('vendor/dexie.min.js', 'provider-vault.js', 'local-database.js', 'agent-policy.js', 'action-pacing.js', 'profile-photos.js');
 importScripts('diagnostic-schema.js', 'diagnostic-log.js');
+importScripts('profile-cleaner-store.js', 'queue-notifications.js', 'queue-reminders.js', 'stop-shortcut.js');
+importScripts('workflow-backup.js', 'local-storage-details.js');
 
 const providers = {
   openai: { name: 'OpenAI', origin: 'https://api.openai.com/*', model: 'gpt-4.1-mini' },
@@ -20,6 +22,7 @@ const followLimit = 200;
 const followReservationMs = 30000;
 let stateQueue = Promise.resolve();
 let settingsQueue = Promise.resolve();
+const unfollowPermits = new Map();
 
 class ProviderError extends Error {
   constructor(message, canFallback = false, reason = 'provider-failed') {
@@ -352,7 +355,7 @@ async function recoverActionHold(message) {
   const gate = await actionPacing.handle({type:'pacingRead',owner});
   if (gate.block) return gate;
   const state = await readState();
-  const {database} = await localDatabase.handle({type:'databaseRead',owner},state.entries);
+  const database = await localDatabase.readWorkflow(owner);
   const history = new Map(state.entries.filter(entry=>entry.owner===owner).map(entry=>[entry.username,entry]));
   const pending = database.runs.some(run => {
     if (!['follow','unfollow-all'].includes(run.kind)) return false;
@@ -367,7 +370,8 @@ async function recoverActionHold(message) {
       return !previous || !['following','requested'].includes(previous.status) || previous.followedAt < run.startedAt;
     });
   });
-  return pending ? actionPacing.handle({type:'pacingBlock',owner,reason:'unconfirmed-action'}) : gate;
+  return pending || await profileCleaner.pendingAfter(owner, gate.clearedAt)
+    ? actionPacing.handle({type:'pacingBlock',owner,reason:'unconfirmed-action'}) : gate;
 }
 
 async function followQuota(message) {
@@ -385,8 +389,9 @@ async function reserveFollow(message) {
     error.code = 'previously-followed';
     throw error;
   }
-  const { database } = await localDatabase.handle({ type: 'databaseRead', owner }, state.entries);
-  if (database.runs.some(run => run.kind === 'follow' && run.continuedUncertain?.includes(username))) {
+  const database = await localDatabase.readWorkflow(owner);
+  if (database.runs.some(run => run.kind === 'follow' &&
+    (run.uncertain?.includes(username) || run.continuedUncertain?.includes(username)))) {
     const error = new Error('A tentativa anterior de seguir @' + username + ' ficou sem confirmação. Perfil pulado.');
     error.code = 'previously-uncertain';
     throw error;
@@ -463,8 +468,9 @@ async function history(message) {
   const state = await readState();
   const entries = state.entries.filter(entry => !owner || entry.owner === owner).sort((a, b) => b.followedAt - a.followedAt);
   if (!owner) return { entries };
-  const { database } = await localDatabase.handle({ type:'databaseRead',owner },state.entries);
-  const continuedUncertain = [...new Set(database.runs.flatMap(run => run.kind==='follow' ? run.continuedUncertain ?? [] : []))];
+  const database = await localDatabase.readWorkflow(owner);
+  const continuedUncertain = [...new Set(database.runs.flatMap(run => run.kind==='follow'
+    ? [...(run.uncertain ?? []), ...(run.continuedUncertain ?? [])] : []))];
   return continuedUncertain.length ? {entries,continuedUncertain} : {entries};
 }
 
@@ -491,28 +497,122 @@ function internalPage(sender) {
   return url.pathname;
 }
 
+async function dashboardStillOpen(documentId) {
+  if (typeof documentId !== 'string' || !documentId || typeof chrome.runtime.getContexts !== 'function') return false;
+  const contexts = await chrome.runtime.getContexts({ contextTypes:['TAB'], documentIds:[documentId] });
+  const dashboard = chrome.runtime.getURL('/dashboard.html');
+  return contexts.some(context => context.documentId === documentId &&
+    typeof context.documentUrl === 'string' && context.documentUrl.split(/[?#]/, 1)[0] === dashboard);
+}
+
+function revokeUnfollowPermits(owner) {
+  const now = Date.now();
+  for (const [id, permit] of unfollowPermits) {
+    if (permit.owner === owner || permit.clickBy <= now) unfollowPermits.delete(id);
+  }
+}
+
+async function authorizeUnfollow(message, sender) {
+  await profileCleaner.check(message, 'authorize');
+  if (message.tabId !== undefined) {
+    const dashTab = new URL(sender.url).searchParams.get('tab');
+    if (!Number.isSafeInteger(message.tabId) || message.tabId <= 0 || (dashTab && message.tabId !== Number(dashTab))) {
+      throw new Error('A autorização deve corresponder à aba conectada do Instagram.');
+    }
+    if (!(await dashboardStillOpen(sender.documentId))) {
+      throw new Error('Não foi possível confirmar a sessão do painel. Abra o painel no Chrome atualizado.');
+    }
+  }
+  const permit = await actionPacing.handle(message);
+  const owner = requireUsername(message.owner);
+  revokeUnfollowPermits(owner);
+  if (message.tabId === undefined) return permit;
+  const dispatchId = crypto.randomUUID();
+  unfollowPermits.set(dispatchId, { owner, username:requireUsername(message.username),
+    tabId:message.tabId, cleanerJobId:message.cleanerJobId, clickBy:permit.clickBy, dashboardDocument:sender.documentId });
+  return { ...permit, dispatchId };
+}
+
+async function checkUnfollowDispatch(message, sender) {
+  const permit = unfollowPermits.get(message.dispatchId);
+  const url = URL.canParse(sender.url) ? new URL(sender.url) : null;
+  const supportedTab = sender.id === chrome.runtime.id && sender.frameId === 0 &&
+    ['https://www.instagram.com','https://instagram.com'].includes(url?.origin);
+  if (!supportedTab || !permit || permit.tabId !== sender.tab?.id || permit.clickBy <= Date.now() ||
+    permit.owner !== usernameOf(message.owner) || permit.username !== usernameOf(message.username)) {
+    return { state:'unfollow-not-authorized' };
+  }
+  if (!(await dashboardStillOpen(permit.dashboardDocument))) return { state:'unfollow-not-authorized' };
+  const pacing = await actionPacing.handle({type:'pacingRead',owner:permit.owner});
+  if (pacing.block) return { state:pacing.block.reason === 'challenge' ? 'platform-challenge' :
+    pacing.block.reason === 'rate-limit' ? 'platform-restricted' : 'action-unconfirmed' };
+  try {
+    await profileCleaner.check(permit, 'dispatch');
+  } catch (error) {
+    if (error.code === 'unfollow-protected') return { state:'unfollow-protected' };
+    return { state:'unfollow-not-authorized' };
+  }
+  return { state:permit.clickBy > Date.now() ? 'allowed' : 'unfollow-not-authorized' };
+}
+
 async function dispatch(message, sender) {
+  if (message.type === 'cleanerDispatchCheck') return serializeState(() => checkUnfollowDispatch(message, sender));
   const page = internalPage(sender);
   if (message.type === 'profilePhoto') {
     if (page !== '/dashboard.html') throw new Error('Abra o painel da extensão para carregar as fotos.');
-    return profilePhotos.get(message,(owner,username)=>serializeState(async()=>{
-      const {database} = await localDatabase.handle({type:'databaseRead',owner},(await readState()).entries);
-      return database.candidates.find(candidate=>candidate.username===username) ?? null;
-    }));
+    return profilePhotos.get(message,(owner,username)=>serializeState(() => localDatabase.getCandidate(owner,username)));
   }
   if (['pacingRead', 'pacingConfigure', 'pacingCommit', 'pacingBlock', 'pacingClear', 'recoverActionHold'].includes(message.type)) {
     if (page !== '/dashboard.html') {
       throw new Error('Abra o painel da extensão para acessar o ritmo das ações.');
     }
-    return serializeState(() => message.type === 'recoverActionHold' ? recoverActionHold(message) : actionPacing.handle(message));
+    return serializeState(async () => {
+      if (message.type === 'recoverActionHold') return recoverActionHold(message);
+      if (message.type === 'pacingCommit' && message.action === 'unfollow') return authorizeUnfollow(message, sender);
+      const result = await actionPacing.handle(message);
+      if (message.type === 'pacingCommit' || message.type === 'pacingClear') revokeUnfollowPermits(requireUsername(message.owner));
+      return result;
+    });
   }
   if (['databaseRead', 'databaseSave', 'databaseExport'].includes(message.type)) {
     if (page !== '/dashboard.html') {
       throw new Error('Abra o painel da extensão para acessar a base local.');
     }
-    return serializeState(async () => localDatabase.handle(message, (await readState()).entries));
+    return serializeState(async () => {
+      const entries = (await readState()).entries;
+      const data = await localDatabase.handle(message, entries);
+      if (message.type !== 'databaseExport') return data;
+      const cleaner = await profileCleaner.handle({ type:'cleanerRead', owner:message.owner },
+        () => localDatabase.handle({ type:'databaseRead', owner:message.owner }, entries));
+      return { ...data, cleaner };
+    });
   }
   if (page !== '/dashboard.html') throw new Error('Abra o painel da extensão para usar esta ação.');
+  if (message.type === 'storageDetails') return localStorageDetails.read();
+  if (message.type === 'backupPreview') return workflowBackup.preview(requireUsername(message.owner), message.backup);
+  if (message.type === 'backupExport' || message.type === 'backupRestore') {
+    const owner = requireUsername(message.owner);
+    const backup = () => navigator.locks.request('instagram-fluxo:' + owner, { ifAvailable: true }, lock => {
+      if (!lock) throw new Error('Pare o fluxo desta conta antes de salvar ou restaurar a cópia.');
+      return serializeState(async () => {
+        if (message.type === 'backupExport') return workflowBackup.export(owner);
+        const restored = await workflowBackup.restore(owner, message.backup);
+        profileCleaner.invalidateProtection();
+        return restored;
+      });
+    });
+    return message.type === 'backupExport' ? backup() : lockProtectionChanges(backup);
+  }
+  if (['notificationSettingsRead', 'notificationSettingsSave'].includes(message.type)) return queueNotifications.handle(message);
+  if (['cleanerRead','cleanerProtectionRead','cleanerCheck','cleanerInventory','cleanerProtect','cleanerConfirm','cleanerOutcome','cleanerDiscard'].includes(message.type)) {
+    const change = () => serializeState(async () => {
+      const forRemoval = message.type === 'cleanerProtectionRead';
+      const data = await profileCleaner.handle(forRemoval ? { ...message, type:'cleanerRead' } : message,
+        async () => localDatabase.handle({ type:'databaseRead', owner:message.owner }, (await readState()).entries));
+      return forRemoval ? { ...data, protectedNames:[...await profileCleaner.protectedForRemoval()] } : data;
+    });
+    return message.type === 'cleanerProtect' ? lockProtectionChanges(change) : change();
+  }
   switch (message.type) {
     case 'diagnosticAppend': return diagnosticLog.emit({ ...message.entry, source:'dashboard' });
     case 'diagnosticStatus': return diagnosticLog.status();
@@ -534,10 +634,19 @@ async function dispatch(message, sender) {
   }
 }
 
+function lockProtectionChanges(task) {
+  return navigator.locks.request('instagram-fluxo:whitelist', { ifAvailable:true }, lock => {
+    if (!lock) throw new Error('Pare a fila de remoção antes de alterar a lista branca deste Chrome.');
+    unfollowPermits.clear();
+    return task();
+  });
+}
+
 const failureCodes = new Set(['action-wait','platform-restricted','platform-challenge','action-unconfirmed',
-  'previously-followed','previously-uncertain','already-follower']);
+  'previously-followed','previously-uncertain','already-follower','unfollow-protected','cleaner-job-changed']);
 const observedRPCs = new Set(['configure','unlockVault','lockVault','analyze','rank','agentPlan','reserveFollow',
-  'record','recordUnfollow','pacingCommit','pacingBlock','pacingClear','pacingConfigure','databaseSave','databaseExport']);
+  'record','recordUnfollow','pacingCommit','pacingBlock','pacingClear','pacingConfigure','databaseSave','databaseExport',
+  'cleanerInventory','cleanerProtect','cleanerConfirm','cleanerOutcome','cleanerDiscard']);
 
 function workerEvent(entry) {
   return diagnosticLog.emit({ ...entry, source:'worker' });
@@ -550,6 +659,10 @@ async function logWorkerResult(message, data) {
     case 'databaseSave': {
       const run=message.run;
       if(message.kind==='run' && run) {
+        if (['follow', 'unfollow-all'].includes(run.kind)) {
+          const notification = run.status === 'completed' ? 'completed' : run.status !== 'running' && run.uncertain?.length ? 'attention' : null;
+          if (notification) await queueNotifications.notify({ runId: run.id, status: notification }).catch(() => {});
+        }
         entry={event:'queue.state',runId:run.id,action:run.kind==='follow'?'follow':'unfollow',username:run.current,
           phase:run.phase,status:run.status,target:run.target,processed:run.processed,followed:run.followed,
           requested:run.requested,skipped:run.skipped,queueLength:run.queue?.length,count:run.uncertain?.length};
@@ -561,6 +674,16 @@ async function logWorkerResult(message, data) {
       break;
     }
     case 'record': case 'recordUnfollow': entry={event:'action.recorded',action:message.type==='record'?'follow':'unfollow',status:message.type==='record'?message.status:'unfollowed'};break;
+    case 'cleanerProtect': entry={event:'action.recorded',action:'unfollow',status:message.protected?'kept':'unprotected',reason:'whitelist'};break;
+    case 'cleanerInventory': entry={event:'data.snapshot',phase:'following',complete:data?.complete,expected:data?.expectedCount,observed:data?.rows.length};break;
+    case 'cleanerConfirm': entry={event:'queue.state',action:'unfollow',status:'saved',runId:data?.job?.id,target:data?.job?.selected.length};break;
+    case 'cleanerOutcome': {
+      const notification = data?.job?.status === 'complete' ? 'completed' : message.status === 'deferred' ? 'attention' : null;
+      if (notification) await queueNotifications.notify({ runId: message.id, status: notification }).catch(() => {});
+      entry={event:'action.recorded',action:'unfollow',runId:message.id,
+        status:message.status==='deferred'?'uncertain':message.status,reason:message.reason};break;
+    }
+    case 'cleanerDiscard': entry={event:'queue.state',action:'unfollow',status:'discarded',runId:message.id};break;
     case 'reserveFollow': entry={event:'action.reserved',action:'follow',clickBy:data?.clickBy,count:data?.remaining};break;
     case 'pacingCommit': entry={event:'action.authorized',action:message.action,nextAt:data?.nextAt,clickBy:data?.clickBy};break;
     case 'pacingBlock': entry={event:'pacing.blocked',level:'warn',reason:message.reason};break;
@@ -585,8 +708,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     },
     async error => {
       const code=failureCodes.has(error?.code)?error.code:error instanceof FollowLimitError?'follow-limit':'operation-failed';
-      if(shouldLog)await workerEvent({event:'rpc.failed',level:'warn',owner:message.owner,control:message.type,
-        reason:code,elapsedMs:Date.now()-began}).catch(()=>{});
+      if(shouldLog) {
+        if (message.type === 'pacingCommit') await workerEvent({event:'action.rejected',level:'warn',owner:message.owner,
+          action:message.action,username:message.username,reason:code}).catch(()=>{});
+        await workerEvent({event:'rpc.failed',level:'warn',owner:message.owner,control:message.type,
+          reason:code,elapsedMs:Date.now()-began}).catch(()=>{});
+      }
       sendResponse({
       ok: false,
       error: error instanceof Error ? error.message : 'A operação não pôde ser concluída.',
@@ -621,11 +748,13 @@ async function initializeStorage() {
 chrome.action.onClicked.addListener(tab => openDashboard(tab).catch(() => undefined));
 chrome.runtime.onStartup.addListener(() => {
   void recoverSchedule();
+  void queueReminders.refresh().catch(() => {});
   void workerEvent({event:'extension.started'});
 });
 chrome.runtime.onInstalled.addListener(() => {
   void initializeStorage().catch(() => undefined);
   void recoverSchedule();
+  void queueReminders.refresh().catch(() => {});
   void workerEvent({event:'extension.updated'});
 });
 chrome.permissions.onAdded.addListener(change => {
