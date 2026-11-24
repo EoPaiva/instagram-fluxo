@@ -790,11 +790,12 @@
     const requested = new Set(followHistory.filter(entry=>entry.status==='requested').map(entry=>username(entry.username)));
     const pending = new Set(inventory.job?.uncertain ?? []);
     const names = [...followHistory.filter(entry=>entry.status==='following').map(entry=>entry.username),
-      ...(database.snapshots.following?.usernames ?? []), ...(inventory.rows ?? []).map(row => row.username)];
+      ...(database.snapshots.following?.usernames ?? []), ...(inventory.rows ?? []).map(row => row.username),
+      ...(inventory.priorRows ?? []).map(row => row.username)];
     return [...new Set(names.map(username))].filter(name=>name!==owner&&!removed.has(name)&&!requested.has(name)&&!confirmed.has(name)&&!pending.has(name));
   }
 
-  async function unfollowAll(tabId, rawOwner, { signal, selected, cleanerJobId,
+  async function unfollowAll(tabId, rawOwner, { signal, selected, cleanerJobId, allowProfileRecovery = false,
     onUpdate = () => {}, onQueue = async () => {}, onCheckpoint = async () => {} } = {}) {
     const owner = username(rawOwner);
     if (selected !== undefined && (!Array.isArray(selected) || selected.length > 200)) {
@@ -1056,7 +1057,7 @@
           }
           if(state.result){
             if(state.result.error){
-              if(state.result.code==='native-confirmation-timeout'&&await reconcileNative(state.result)){
+              if(allowProfileRecovery&&state.result.code==='native-confirmation-timeout'&&await reconcileNative(state.result)){
                 await startNative();handled=0;acknowledged=0;lastMessage=undefined;continue;
               }
               const error=new Error(state.result.message||'A remoção foi interrompida.');
@@ -1077,6 +1078,9 @@
               return pending(native.message||'Ainda há perfis pendentes na lista Seguindo.');
             }
             await onUpdate({...progress(),...native,diagnostic:true});
+            if (!allowProfileRecovery) return pending(selection
+              ? 'A lista Seguindo não mostrou todos os perfis do lote. A fila ficou salva para retomar.'
+              : 'A lista Seguindo não carregou os perfis restantes. O progresso foi salvo.');
             const names=(selection ? outstanding() : await knownUnfollowTargets(owner,confirmed,protection)).filter(name=>!deferred.has(name));
             if(!names.length)return pending(native.message+' Não há outros perfis conhecidos pendentes na base local para conferir.');
             await onUpdate({...progress(),diagnostic:true,message:`A lista Seguindo parou de carregar. Conferindo ${names.length} ${selection ? 'perfis do lote salvo' : 'perfis conhecidos na base local'}.`});

@@ -25,6 +25,11 @@
   <a href="#a-fila-em-ação">Demonstração</a> · <a href="#como-funciona">Fluxos</a> · <a href="#instalação-local">Instalação</a> · <a href="#desenvolvimento">Desenvolvimento</a>
 </p>
 
+## Correções da 3.9.1
+
+- **Limpa Perfil** conta apenas os perfis identificados na leitura atual. Quando o Instagram carrega parte da lista, o painel mostra o progresso real e mantém a lista branca.
+- **Parar de seguir** pausa na lista Seguindo quando faltam perfis, com o progresso salvo. Para abrir os perfis pendentes, ative **Conferir perfis individualmente se a lista falhar**.
+
 ## A fila em ação
 
 <p align="center">

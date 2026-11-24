@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Instagram Fluxo",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "description": "Organize sugestões, revise sua lista Seguindo e proteja perfis com uma lista branca local.",
   "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage", "nativeMessaging", "alarms", "sidePanel"],
   "optional_permissions": ["notifications"],

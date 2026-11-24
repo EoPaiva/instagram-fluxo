@@ -7,7 +7,7 @@
   const isBusiness = row => row.kind === 'business' || row.kind === 'company';
 
   function create({ getOwner, getBusy, getBlocked, tabId, run, rpc, showProgress, report, make, profileLink, cleanUsername,
-    errorText, refreshHistory, refreshLocalData, updateSideProgress = () => {} }) {
+    errorText, refreshHistory, refreshLocalData, getProfileRecovery = () => false, updateSideProgress = () => {} }) {
     const el = suffix => document.getElementById('cleaner-' + suffix);
     if (!el('scan')) return null;
 
@@ -75,11 +75,12 @@
       const rows = pageRows();
       const total = snapshot?.rows.length ?? 0;
       const expected = snapshot?.expectedCount;
-      const reviewed = snapshot?.reviewed.length ?? 0;
+      const reviewed = total - rows.length;
       const protectedNames = new Set(snapshot?.protectedNames ?? []);
-      const mode = snapshot?.complete ? 'Lista completa' : total ? 'Lista parcial' : '';
+      const mode = snapshot?.complete ? 'Lista completa' : snapshot?.source === 'scan' ? 'Lista parcial' : '';
       const coverage = Number.isSafeInteger(expected) && expected >= total
-        ? `${total} de ${expected} perfis` : `${total} perfis disponíveis`;
+        ? `${total} de ${expected} perfis` : expected < total && Number.isSafeInteger(expected)
+          ? `${total} perfis na lista · contagem do Instagram: ${expected}` : `${total} perfis disponíveis`;
       el('summary').textContent = !owner ? 'Carregue sua conta para começar.' : !snapshot ? `Carregando dados de @${owner}…`
         : [mode, coverage, `${reviewed} revisados`, `${protectedNames.size} protegidos`].filter(Boolean).join(' · ');
       el('protected-count').textContent = protectedNames.size ? String(protectedNames.size) : '';
@@ -259,17 +260,20 @@
         const save = async inventoryPage => {
           const response = await rpc('cleanerInventory', { ...inventoryPage, owner: account, source: 'scan' });
           if (!acceptResponse(response, account)) return;
-          el('summary').textContent = `${response.rows.length} perfis guardados` +
-            (Number.isSafeInteger(response.expectedCount) ? ` de ${response.expectedCount}` : '') + '.';
+          if (inventoryPage.begin) { page = 0; manual.clear(); render(); }
+          const { observed, expectedCount } = inventoryPage;
+          el('summary').textContent = Number.isSafeInteger(expectedCount)
+            ? observed <= expectedCount ? `${observed} de ${expectedCount} perfis nesta leitura.`
+              : `${observed} perfis na lista. O Instagram indica ${expectedCount}.`
+            : `${observed} perfis nesta leitura.`;
           showProgress('Lendo quem você segue… ' + el('summary').textContent, false,
-            response.expectedCount > 0 ? Math.min(1, response.rows.length / response.expectedCount) : null);
-          updateSideProgress({ target: response.expectedCount, processed: response.rows.length });
+            expectedCount > 0 && observed <= expectedCount ? observed / expectedCount : null);
+          updateSideProgress({ target: observed <= expectedCount ? expectedCount : null, processed: observed });
         };
         try {
           const inventoryResult = await inventory.scan(tabId, account, { signal, onPage: save });
-          await save({ ...inventoryResult, replace: inventoryResult.complete });
           const message = inventoryResult.complete ? 'Leitura concluída. Revise a seleção antes de confirmar.'
-            : 'O Instagram não mostrou toda a lista. Os perfis encontrados ficaram salvos.';
+            : 'A leitura ficou parcial. A revisão mostra somente os perfis encontrados nesta leitura.';
           writeStatus(message);
           showProgress(message);
           return { workflowStatus: inventoryResult.complete ? 'completed' : 'paused' };
@@ -320,7 +324,7 @@
         showSideBatch(job);
         try {
           const outcome = await engine.run(tabId, account, {
-            selected, signal, cleanerJobId: job.id,
+            selected, signal, cleanerJobId: job.id, allowProfileRecovery: getProfileRecovery(),
             async onCheckpoint(update) {
               if (update.status === 'unfollowed') await rpc('recordUnfollow', { owner: account, username: update.username });
               const save = async () => {

@@ -187,6 +187,7 @@
         return result.result.data;
       };
       const opened = read(opening);
+      const scanId = crypto.randomUUID();
       const unique = new Map();
       const unsaved = new Map();
       let expectedCount = Number.isSafeInteger(opened.total) ? opened.total : null;
@@ -195,14 +196,16 @@
       let settledSince = 0;
       let stalledSince = 0;
       let lastSavedAt = performance.now();
-      const result = complete => ({ rows: [...unique.values()], expectedCount, complete, source: 'scan' });
+      const snapshot = (rows, complete = false) => ({ rows, expectedCount, complete, source: 'scan', scanId, observed: unique.size });
       const persist = async () => {
         if (unsaved.size === 0) return;
-        await onPage({ ...result(false), rows: [...unsaved.values()], observed: unique.size });
+        await onPage(snapshot([...unsaved.values()]));
         unsaved.clear();
         lastSavedAt = performance.now();
       };
 
+      signal?.throwIfAborted();
+      await onPage({ ...snapshot([]), begin: true });
       try {
         for (let step = 0; !atEnd && step < 1600; step++) {
           signal?.throwIfAborted();
@@ -211,7 +214,8 @@
             catch (error) { return { error: error.message, code: error.code }; }
           } });
           const page = read(reading);
-          if (page.expectedCount !== expectedCount) stableCount = false;
+          if (expectedCount === null) expectedCount = page.expectedCount;
+          else if (page.expectedCount !== null && page.expectedCount !== expectedCount) stableCount = false;
           const before = unique.size;
           for (const raw of page.rows) {
             const row = classify(raw);
@@ -222,10 +226,11 @@
           }
           const now = performance.now();
           if (unsaved.size >= 100 || now - lastSavedAt >= 2000) await persist();
-          if (page.atBottom && !page.loading && !page.unidentified) {
+          const countReached = stableCount && expectedCount === unique.size;
+          if ((page.atBottom || countReached) && !page.loading && !page.unidentified) {
             settledSince ||= now;
             const settledFor = now - settledSince;
-            atEnd = expectedCount === unique.size ? settledFor >= 400 : settledFor >= 6500;
+            atEnd = countReached ? settledFor >= 400 : settledFor >= 6500;
           } else settledSince = 0;
           if (page.atBottom && unique.size === before) stalledSince ||= now;
           else stalledSince = 0;
@@ -233,7 +238,10 @@
           if (!atEnd) await sleep(230, signal);
         }
         signal?.throwIfAborted();
-        return result(atEnd && stableCount && expectedCount === unique.size);
+        const final = snapshot([...unique.values()], atEnd && stableCount && expectedCount === unique.size);
+        await onPage({ ...final, replace: final.complete });
+        unsaved.clear();
+        return final;
       } finally { await persist(); }
     });
   }

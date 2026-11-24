@@ -101,6 +101,10 @@
         </div>
       </section>
       <div class="progress-bar" id="progress-bar" hidden><div class="progress-content"><p id="flow-status" role="status" aria-atomic="true"></p><progress id="flow-progress-meter" max="1" aria-label="Progresso da etapa atual" aria-describedby="flow-status" hidden></progress></div><button type="button" class="secondary stop" id="stop" hidden>Parar fluxo</button></div>
+      <div data-workspace="unfollow" class="unfollow-recovery-option">
+        <label class="ai-toggle" for="unfollow-profile-recovery"><input type="checkbox" id="unfollow-profile-recovery" aria-describedby="unfollow-profile-recovery-help">Conferir perfis individualmente se a lista falhar</label>
+        <p class="small muted" id="unfollow-profile-recovery-help">Ative se quiser que o Limpa Perfil ou a remoção de todos abra os perfis pendentes no Instagram.</p>
+      </div>
       <section class="card cleaner" id="profile-cleaner" data-workspace="unfollow" aria-labelledby="cleaner-heading">
         <div class="card-head"><div><h2 id="cleaner-heading">Limpa Perfil</h2><p class="muted">Revise quem você segue em lotes de até 200. Páginas e empresas com sinais de identificação vêm selecionadas.</p></div></div>
         <div class="cleaner-actions">

@@ -94,11 +94,18 @@
     )) throw new Error('Limpe a busca da lista Seguindo e inicie de novo.');
   }
 
-  function rows(list) {
+  function inventoryLabel(button) {
+    const label = textOf(button);
+    if (followingLabels.has(label) || followLabels.has(label)) return label;
+    return normal(button.getAttribute('aria-label') || button.getAttribute('title'));
+  }
+
+  function rows(list, inventoryControls) {
     const profiles = new Map();
+    const actionLabel = inventoryControls ? inventoryLabel : textOf;
     for (const button of controls(list)) {
       if (button.closest(dialogSelector) !== list) continue;
-      const label = textOf(button);
+      const label = actionLabel(button);
       if (!followingLabels.has(label) && !followLabels.has(label)) continue;
       for (let parent = button.parentElement; parent && parent !== list; parent = parent.parentElement) {
         const names = new Set();
@@ -107,17 +114,26 @@
           const name = linkedPath(link).match(profilePath)?.[1]?.toLowerCase();
           if (!name) continue;
           names.add(name);
-          if (visible(link) && textOf(link).replace(/^@/, '') === name) labels.add(name);
+          if (visible(link) && (textOf(link).replace(/^@/, '') === name ||
+            inventoryControls && normal(link.getAttribute('aria-label')).replace(/^@/, '') === name)) labels.add(name);
         }
         if (names.size === 0) continue;
         const anotherAction = controls(parent).some(other => other !== button &&
-          (followingLabels.has(textOf(other)) || followLabels.has(textOf(other)))
+          (followingLabels.has(actionLabel(other)) || followLabels.has(actionLabel(other)))
         );
         if (names.size !== 1 || anotherAction) break;
         const [name] = names;
         if (!labels.has(name)) continue;
-        if (profiles.has(name)) throw new Error('A lista mostra @' + name + ' mais de uma vez. Execução interrompida.');
-        profiles.set(name, { name, button, row: parent, following: followingLabels.has(label) });
+        const following = followingLabels.has(label);
+        if (inventoryControls) {
+          if (following) {
+            inventoryControls.add(button);
+            if (!profiles.has(name)) profiles.set(name, { name, button, row: parent, following });
+          }
+        } else {
+          if (profiles.has(name)) throw new Error('A lista mostra @' + name + ' mais de uma vez. Execução interrompida.');
+          profiles.set(name, { name, button, row: parent, following });
+        }
         break;
       }
     }
@@ -261,16 +277,20 @@
     const list = followingDialog(visibleDialogs);
     if (!list || visibleDialogs.length !== 1) throw new Error('A lista Seguindo foi fechada ou mudou.');
     ensureUnfiltered(list);
+    const followingControls = () => controls(list).filter(button =>
+      button.closest(dialogSelector) === list && followingLabels.has(inventoryLabel(button)));
     const scrollers = scrollContainers(list);
-    if (scrollers.length > 1) throw new Error('Há mais de uma área de rolagem na lista Seguindo.');
-    const scroller = scrollers[0];
+    const buttons = followingControls();
+    const containing = scrollers.filter(element => buttons.every(button => element.contains(button)));
+    const scroller = scrollers.length < 2 ? scrollers[0] : containing.find(element => containing.every(parent => parent.contains(element)));
+    if (!scroller && scrollers.length > 1) throw new Error('Há mais de uma área de rolagem na lista Seguindo.');
     if (scroller && (reset || advance)) {
       scroller.scrollTop = reset ? 0 : scroller.scrollTop + Math.max(1, Math.floor(scroller.clientHeight * 0.75));
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
     }
     const text = value => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '').slice(0, 160);
-    const observed = [...rows(list).values()].filter(entry => entry.following);
-    const knownControls = new Set(observed.map(entry => entry.button));
+    const knownControls = new Set();
+    const observed = [...rows(list, knownControls).values()];
     const found = observed.map(entry => {
       const nameLink = [...entry.row.querySelectorAll('a[href]')].find(link =>
         linkedPath(link).match(profilePath)?.[1]?.toLowerCase() === entry.name && text(link.innerText));
@@ -285,7 +305,7 @@
       return { username: entry.name, ...(label && { label }), ...(category && { category }) };
     });
     return { rows: found, expectedCount, atBottom: !scroller || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2,
-      loading: loading(list), unidentified: relationshipControls(list).some(control => !knownControls.has(control)) };
+      loading: loading(list), unidentified: followingControls().some(control => !knownControls.has(control)) };
   }
 
   async function guardRemoval(owner, name, dispatchId) {

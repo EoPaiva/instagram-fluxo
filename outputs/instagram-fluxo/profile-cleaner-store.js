@@ -44,6 +44,12 @@ const profileCleaner = (() => {
       source: null, updatedAt: null, reviewed: [], job: null };
   }
 
+  function archiveRows(state) {
+    const known = new Map((state.priorRows ?? []).map(item => [item.username, item]));
+    for (const entry of state.rows) known.set(entry.username, entry);
+    return [...known.values()].slice(-limit);
+  }
+
   async function read(rawOwner) {
     const owner = name(rawOwner);
     const key = prefix + owner;
@@ -53,6 +59,12 @@ const profileCleaner = (() => {
       !Array.isArray(stored.protectedNames) || !Array.isArray(stored.reviewed) ||
       stored.protectedNames.length > limit || stored.protectedNames.some(handle => handle !== name(handle))) {
       throw new Error('Não foi possível validar a base da lista branca. As remoções estão pausadas.');
+    }
+    if (stored.source === 'scan' && !stored.scanId && Number.isSafeInteger(stored.expectedCount) &&
+        stored.rows.length > stored.expectedCount) {
+      // Older partial reads mixed rows from different sessions. Keep them for
+      // recovery, but require a new read before offering them for review.
+      return { ...stored, rows: [], priorRows: archiveRows(stored), complete: false };
     }
     return stored;
   }
@@ -127,6 +139,20 @@ const profileCleaner = (() => {
       throw new Error('A contagem de perfis é inválida.');
     }
     if (!Array.isArray(message.rows) || message.rows.length > limit) throw new Error('O inventário está inválido ou excede o limite.');
+    const scoped = message.scanId !== undefined;
+    if (scoped) {
+      if (message.source !== 'scan' || typeof message.scanId !== 'string' || !/^[a-f0-9-]{36}$/i.test(message.scanId)) {
+        throw new Error('A sessão de leitura é inválida.');
+      }
+      if (message.begin === true) {
+        if (state.job?.status === 'pending') throw new Error('Finalize o lote salvo antes de ler a lista novamente.');
+        state.priorRows = archiveRows(state);
+        state.rows = [];
+        state.scanId = message.scanId;
+      } else if (state.scanId !== message.scanId) {
+        throw new Error('Outra leitura substituiu esta sessão. Abra a lista atualizada.');
+      }
+    } else delete state.scanId;
     const older = new Map(state.rows.map(item => [item.username, item]));
     const incoming = new Map();
     for (const item of message.rows) {
@@ -138,7 +164,7 @@ const profileCleaner = (() => {
     const merged = message.replace === true ? incoming : new Map([...older, ...incoming]);
     if (merged.size > limit) throw new Error('O inventário excede o limite de perfis.');
     state.rows = [...merged.values()];
-    state.expectedCount = expected ?? state.expectedCount;
+    state.expectedCount = scoped ? expected : expected ?? state.expectedCount;
     state.complete = exact && merged.size === expected;
     state.source = sources.has(message.source) ? message.source : 'scan';
     state.updatedAt = Date.now();

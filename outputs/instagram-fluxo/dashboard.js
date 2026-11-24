@@ -41,7 +41,7 @@
     history: $('history'), historyStatus: $('history-status'), refreshHistory: $('refresh-history'),
     historyDisclosure: $('history-disclosure'), historyViewport: $('history-viewport'),
     historyMeasure: $('history-row-measure'), historyCount: $('history-count'), historyKeys: $('history-keys'),
-    unfollowAll: $('unfollow-all'),
+    unfollowAll: $('unfollow-all'), unfollowProfileRecovery: $('unfollow-profile-recovery'),
     localSummary: $('local-summary'), localUpdated: $('local-updated'), localStatus: $('local-data-status'),
     exportData: $('export-data'), refreshLocal: $('refresh-local-data'),
     resumeFollow: $('resume-follow'),
@@ -392,6 +392,7 @@
     ui.vaultConfirm.disabled = configBusy || state.vault !== 'missing';
     ui.lockVault.disabled = configBusy || !unlocked;
     ui.unfollowAll.disabled = busy || blocked || !hasProfile;
+    ui.unfollowProfileRecovery.disabled = busy;
     for (const control of [ui.exportData, ui.refreshLocal]) if (control) control.disabled = busy || !hasProfile;
     backupPanel?.sync();
     if (ui.resumeFollow) {
@@ -1660,7 +1661,7 @@
       try {
         await persist(() => saveLocal('run', { run: durable }));
         const result = await engine.run(tabId, owner, {
-          signal,
+          signal, allowProfileRecovery: ui.unfollowProfileRecovery.checked,
           async onQueue(usernames, total) {
             durable.queue = usernames;
             durable.target = Number.isSafeInteger(total) ? total : usernames.length;
@@ -1754,6 +1755,7 @@
   }
 
   cleanerPanel = globalThis.instagramFluxoCleanerPanel?.create({
+    getProfileRecovery: () => ui.unfollowProfileRecovery.checked,
     getOwner: () => cleanUsername(state.profile?.username),
     getBusy: () => Boolean(state.operation || state.savingPacing || state.savingReferences),
     getBlocked: () => Boolean(state.pacing?.block),

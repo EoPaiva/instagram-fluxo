@@ -1,4 +1,4 @@
-# Instagram Fluxo 3.9.0
+# Instagram Fluxo 3.9.1
 
 Siga perfis das suas referências, revise sua lista Seguindo no Limpa Perfil ou remova todos os perfis sem proteção. As filas, o inventário e a lista branca ficam separados por conta neste Chrome.
 
@@ -50,7 +50,7 @@ Quando o clique em Seguir é enviado e o resultado não é confirmado, a extens�
 
 ## Limpa Perfil e lista branca
 
-1. Carregue sua própria conta e, em **Limpa Perfil**, use **Ler lista Seguindo**. A leitura salva o inventário conforme encontra novos perfis. Se a lista parar de carregar, o painel informa que ela está parcial e preserva o que foi lido.
+1. Carregue sua própria conta e, em **Limpa Perfil**, use **Ler lista Seguindo**. A revisão mostra os perfis reconhecidos na leitura atual. Se a lista parar de carregar, o painel marca a leitura como parcial e preserva o que foi encontrado.
 2. Se preferir, importe o JSON ou HTML de **Seguindo**, ou o ZIP da sua exportação oficial do Instagram. A importação ocorre neste Chrome. Confira a conta escolhida, pois a exportação pode estar desatualizada ou ter vindo de outra conta.
 3. Revise até 200 perfis por página. Páginas e empresas com sinais no nome ou na categoria disponível aparecem selecionadas. Perfis pessoais e tipos incertos ficam desmarcados. Use **Proteger** ou desmarque uma seleção para adicionar o perfil à lista branca.
 4. Clique em **Revisar seleção**, confira a quantidade e confirme o lote. A fila usa a seleção aprovada. Após parar e reabrir, carregue a mesma conta e use **Retomar lote salvo**. O painel mantém resultados confirmados e destaca ações inconclusivas para conferência.
@@ -73,9 +73,9 @@ Carregue sua conta e clique em **Iniciar unfollow de todos**. O fluxo usa o moto
 
 Ele abre a lista **Seguindo** do seu próprio perfil, identifica uma linha, solicita o intervalo salvo, clica em Seguindo, confirma a janela nativa quando presente e verifica a mudança. Só depois de salvar o resultado passa à próxima linha. Carrega mais linhas conforme necessário, sem coletar todos os seguidores ou seguindo antes de começar.
 
-Quando a lista demora para confirmar uma remoção, a extensão confere o estado atual daquele perfil duas vezes. Se a remoção já ocorreu, registra o resultado e continua. Se o perfil ainda mostrar Seguindo, registra uma pendência e continua pelos demais, guardando esse nome para evitar outro clique durante a mesma execução. Uma nova execução iniciada pelo botão pode conferir esse perfil novamente. Cada resultado e pendência fica salvo no registro local.
+Com a recuperação individual ativada, a extensão confere o estado no perfil quando a lista demora a confirmar uma remoção. Se a remoção já ocorreu, registra o resultado e continua. Se o perfil ainda mostrar Seguindo, registra uma pendência e continua pelos demais, guardando esse nome para evitar outro clique durante a mesma execução. Uma nova execução iniciada pelo botão pode conferir esse perfil novamente. Cada resultado e pendência fica salvo no registro local.
 
-Se a janela Seguindo parar de carregar enquanto o perfil ainda mostra contas seguidas, o painel consulta o inventário do Limpa Perfil, o histórico confirmado e a última lista Seguindo salva. Na recuperação, confere individualmente se o perfil ainda mostra **Seguindo**. No Limpa Perfil, essa conferência se limita aos nomes pendentes do lote confirmado. A lista branca e as pausas por restrição continuam valendo.
+Por padrão, a remoção permanece na lista Seguindo. Para permitir que abra perfis individuais em caso de falha na lista, marque **Conferir perfis individualmente se a lista falhar**. Nesse modo, o painel consulta o inventário do Limpa Perfil, o histórico confirmado e a última lista Seguindo salva. Na recuperação, confere individualmente se o perfil ainda mostra **Seguindo**. No Limpa Perfil, essa conferência se limita aos nomes pendentes do lote confirmado. A lista branca e as pausas por restrição continuam valendo.
 
 A alternativa pode remover somente relações que estejam acessíveis e conhecidas localmente. Se a lista continuar indisponível, não promete encontrar todos os perfis e não declara conclusão enquanto a contagem nativa não for zero. O motivo fica visível e salvo no log; o botão Parar e os checkpoints funcionam também durante essa recuperação.
 
